@@ -643,90 +643,7 @@
 
     <div id="results" style="display:none;"></div>
 
-    <!-- Formulaire d'ajout d'informations -->
-    <div id="addInfoForm">
-      <h3 style="margin-top: 0; color: #667eea;">📝 Informations complémentaires</h3>
-      
-      <div class="form-row">
-        <div class="form-group">
-          <label for="fournisseur">🏪 Fournisseur (8 car. max)</label>
-          <input type="text" id="fournisseur" maxlength="8" placeholder="Ex: SUP12345">
-        </div>
-        
-        <div class="form-group">
-          <label for="styliste">👤 Styliste</label>
-          <select id="styliste">
-            <option value="">-- Sélectionner --</option>
-            <!-- 
-            ========================================
-            GESTION DES STYLISTES - ZONE MODIFIABLE
-            ========================================
-            Pour ajouter un styliste : dupliquer une ligne <option> et changer le nom
-            Pour supprimer un styliste : supprimer la ligne <option> correspondante
-            
-            Exemple d'ajout :
-            <option value="NouveauNom">NouveauNom</option>
-            -->
-            <option value="Anais">Anais</option>
-            <option value="Clementine">Clementine</option>
-            <option value="Delphine">Anais</option>
-            <option value="Fred">Fred</option>
-            <option value="Gaelle">Gaelle</option>
-            <option value="Meixuan">Meixuan</option>
-            
-            <!-- 
-            ========================================
-            FIN DE LA ZONE MODIFIABLE DES STYLISTES
-            ========================================
-            -->
-          </select>
-        </div>
-      </div>
-      
-      <div class="form-row">
-        <div class="form-group">
-          <label for="penderieStyle">👗 Penderie Style</label>
-          <select id="penderieStyle">
-            <option value="">-- Sélectionner --</option>
-            <option value="Oui">Oui</option>
-            <option value="A envoyer à Paris">A envoyer à Paris</option>
-          </select>
-        </div>
-        
-        <div class="form-group">
-          <label for="shootingPhotos">📸 Shooting Photos</label>
-          <select id="shootingPhotos">
-            <option value="">-- Sélectionner --</option>
-            <option value="Oui">Oui</option>
-            <option value="Non">Non</option>
-          </select>
-        </div>
-      </div>
-      
-      <div class="form-row">
-        <div class="form-group">
-          <label for="showroom">🏢 Showroom</label>
-          <textarea id="showroom" placeholder="Informations showroom..."></textarea>
-        </div>
-      </div>
-      
-      <div class="form-row">
-        <div class="form-group">
-          <label for="aGarder">💾 A garder</label>
-          <textarea id="aGarder" placeholder="Informations à garder..."></textarea>
-        </div>
-        
-        <div class="form-group">
-          <label for="auber">📍 Auber</label>
-          <textarea id="auber" placeholder="Informations Auber..."></textarea>
-        </div>
-      </div>
-      
-      <div class="button-row">
-        <button onclick="addToListWithInfo()" style="background: #28a745;">✅ Ajouter à la liste</button>
-        <button onclick="cancelAddInfo()" style="background: #dc3545;">❌ Annuler</button>
-      </div>
-    </div>
+
 
     <div class="section">
       <h3>📋 Références sélectionnées</h3>
@@ -802,7 +719,6 @@
         updateSelectedList();
         document.getElementById('fileStatus').innerHTML = '';
         document.getElementById('results').style.display = 'none';
-        document.getElementById('addInfoForm').style.display = 'none';
         
         // Focus sur le champ mot de passe
         setTimeout(() => {
@@ -1047,7 +963,7 @@
             <strong>Couleur :</strong> ${result[COL_COULEUR] || 'N/A'}<br/>
             <strong>Taille :</strong> ${result[COL_TAILLE] || 'N/A'}<br/>
             <strong>EAN :</strong> ${result[COL_EAN] || 'N/A'}<br/><br/>
-            <button onclick="showAddInfoForm()">➕ Ajouter à la liste</button>
+            <button onclick="addProductDirectly()">➕ Ajouter à la liste</button>
           </div>`;
       } else {
         rd.style.display = "block";
@@ -1064,25 +980,7 @@
       rd.scrollIntoView({ behavior: 'smooth' });
     }
 
-    function showAddInfoForm() {
-      document.getElementById('addInfoForm').style.display = 'block';
-      // Réinitialiser le formulaire
-      resetAddInfoForm();
-      // Faire défiler vers le formulaire
-      document.getElementById('addInfoForm').scrollIntoView({ behavior: 'smooth' });
-    }
-
-    function resetAddInfoForm() {
-      document.getElementById('fournisseur').value = '';
-      document.getElementById('styliste').value = '';
-      document.getElementById('penderieStyle').value = '';
-      document.getElementById('shootingPhotos').value = '';
-      document.getElementById('showroom').value = '';
-      document.getElementById('aGarder').value = '';
-      document.getElementById('auber').value = '';
-    }
-
-    function addToListWithInfo() {
+    function addProductDirectly() {
       if (!currentProductToAdd) {
         alert("⚠️ Aucun produit sélectionné");
         return;
@@ -1096,27 +994,14 @@
         return;
       }
 
-      // Récupérer les valeurs du formulaire
-      const shootingPhotos = document.getElementById('shootingPhotos').value;
+      // Ajouter directement le produit à la liste
+      selectedItems.push({
+        product: currentProductToAdd
+      });
       
-      const itemWithInfo = {
-        product: currentProductToAdd,
-        additionalInfo: {
-          fournisseur: document.getElementById('fournisseur').value,
-          styliste: document.getElementById('styliste').value,
-          penderieStyle: document.getElementById('penderieStyle').value,
-          shootingPhotos: shootingPhotos,
-          showroom: document.getElementById('showroom').value,
-          aGarder: document.getElementById('aGarder').value,
-          auber: document.getElementById('auber').value
-        }
-      };
-
-      selectedItems.push(itemWithInfo);
       updateSelectedList();
       
-      // Masquer le formulaire et les résultats
-      document.getElementById('addInfoForm').style.display = 'none';
+      // Masquer les résultats
       document.getElementById("results").style.display = "none";
       
       // Vider le champ de saisie
@@ -1130,11 +1015,6 @@
       
       // Afficher un message de confirmation
       showConfirmationMessage();
-    }
-
-    function cancelAddInfo() {
-      document.getElementById('addInfoForm').style.display = 'none';
-      currentProductToAdd = null;
     }
 
     function showConfirmationMessage() {
@@ -1174,108 +1054,15 @@
             Taille: ${item.product[COL_TAILLE] || 'N/A'} | Marque: ${item.product[COL_MARQUE] || 'N/A'} | Couleur: ${item.product[COL_COULEUR] || 'N/A'}<br/>
             <small>EAN: ${item.product[COL_EAN] || 'N/A'}</small><br/>
             
-            <div style="margin-top: 10px; color: #666;">
-              ${item.additionalInfo.fournisseur ? `<strong>Fournisseur:</strong> ${item.additionalInfo.fournisseur}<br/>` : ''}
-              ${item.additionalInfo.styliste ? `<strong>Styliste:</strong> ${item.additionalInfo.styliste}<br/>` : ''}
-              ${item.additionalInfo.penderieStyle ? `<strong>Penderie Style:</strong> ${item.additionalInfo.penderieStyle}<br/>` : ''}
-              ${item.additionalInfo.shootingPhotos ? `<strong>Shooting Photos:</strong> ${item.additionalInfo.shootingPhotos}<br/>` : ''}
-              ${item.additionalInfo.showroom ? `<strong>Showroom:</strong> ${item.additionalInfo.showroom}<br/>` : ''}
-              ${item.additionalInfo.aGarder ? `<strong>A garder:</strong> ${item.additionalInfo.aGarder}<br/>` : ''}
-              ${item.additionalInfo.auber ? `<strong>Auber:</strong> ${item.additionalInfo.auber}<br/>` : ''}
-            </div>
-            
             <div style="margin-top: 10px;">
-              <button onclick="editItem(${index})" style="background: #ffc107; color: #000; padding: 5px 10px; font-size: 12px;">✏️ Modifier</button>
               <button onclick="removeFromList(${index})" style="background: #dc3545; padding: 5px 10px; font-size: 12px;">🗑️ Supprimer</button>
-            </div>
-          </div>
-          
-          <div id="editForm${index}" class="edit-form">
-            <h4>Modifier les informations</h4>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Fournisseur</label>
-                <input type="text" id="editFournisseur${index}" value="${item.additionalInfo.fournisseur}" maxlength="8">
-              </div>
-              <div class="form-group">
-                <label>Styliste</label>
-                <select id="editStyliste${index}">
-                  <option value="">-- Sélectionner --</option>
-                  <option value="Gaelle" ${item.additionalInfo.styliste === 'Gaelle' ? 'selected' : ''}>Gaelle</option>
-                  <option value="Fred" ${item.additionalInfo.styliste === 'Fred' ? 'selected' : ''}>Fred</option>
-                  <option value="Clementine" ${item.additionalInfo.styliste === 'Clementine' ? 'selected' : ''}>Clementine</option>
-                  <option value="Guillaume" ${item.additionalInfo.styliste === 'Guillaume' ? 'selected' : ''}>Guillaume</option>
-                  <option value="Meixuan" ${item.additionalInfo.styliste === 'Meixuan' ? 'selected' : ''}>Meixuan</option>
-                  <option value="Anais" ${item.additionalInfo.styliste === 'Anais' ? 'selected' : ''}>Anais</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Penderie Style</label>
-                <select id="editPenderieStyle${index}">
-                  <option value="">-- Sélectionner --</option>
-                  <option value="Oui" ${item.additionalInfo.penderieStyle === 'Oui' ? 'selected' : ''}>Oui</option>
-                  <option value="A envoyer à Paris" ${item.additionalInfo.penderieStyle === 'A envoyer à Paris' ? 'selected' : ''}>A envoyer à Paris</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Shooting Photos</label>
-                <select id="editShootingPhotos${index}">
-                  <option value="">-- Sélectionner --</option>
-                  <option value="Oui" ${item.additionalInfo.shootingPhotos === 'Oui' ? 'selected' : ''}>Oui</option>
-                  <option value="Non" ${item.additionalInfo.shootingPhotos === 'Non' ? 'selected' : ''}>Non</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>Showroom</label>
-                <textarea id="editShowroom${index}">${item.additionalInfo.showroom}</textarea>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label>A garder</label>
-                <textarea id="editAGarder${index}">${item.additionalInfo.aGarder}</textarea>
-              </div>
-              <div class="form-group">
-                <label>Auber</label>
-                <textarea id="editAuber${index}">${item.additionalInfo.auber}</textarea>
-              </div>
-            </div>
-            <div class="button-row">
-              <button onclick="saveEdit(${index})" style="background: #28a745;">💾 Sauvegarder</button>
-              <button onclick="cancelEdit(${index})" style="background: #6c757d;">❌ Annuler</button>
             </div>
           </div>
         </div>`
       ).join("");
     }
 
-    function editItem(index) {
-      document.getElementById(`editForm${index}`).style.display = 'block';
-    }
 
-    function cancelEdit(index) {
-      document.getElementById(`editForm${index}`).style.display = 'none';
-    }
-
-    function saveEdit(index) {
-      const shootingPhotos = document.getElementById(`editShootingPhotos${index}`).value;
-      
-      selectedItems[index].additionalInfo = {
-        fournisseur: document.getElementById(`editFournisseur${index}`).value,
-        styliste: document.getElementById(`editStyliste${index}`).value,
-        penderieStyle: document.getElementById(`editPenderieStyle${index}`).value,
-        shootingPhotos: shootingPhotos,
-        showroom: document.getElementById(`editShowroom${index}`).value,
-        aGarder: document.getElementById(`editAGarder${index}`).value,
-        auber: document.getElementById(`editAuber${index}`).value
-      };
-      
-      updateSelectedList();
-    }
 
     function removeFromList(index) {
       selectedItems.splice(index, 1);
@@ -1383,7 +1170,7 @@
           <strong>Couleur :</strong> ${selectedItem[COL_COULEUR] || 'N/A'}<br/>
           <strong>Taille :</strong> ${selectedItem[COL_TAILLE] || 'N/A'}<br/>
           <strong>EAN :</strong> ${selectedItem[COL_EAN] || 'N/A'}<br/><br/>
-          <button onclick="showAddInfoForm()">➕ Ajouter à la liste</button>
+          <button onclick="addProductDirectly()">➕ Ajouter à la liste</button>
         </div>`;
       
       // Remplir aussi le champ EAN pour cohérence
@@ -1456,13 +1243,8 @@
         'Référence': item.product[COL_REF] || '',
         'Couleur': item.product[COL_COULEUR] || '',
         'Taille': item.product[COL_TAILLE] || '',
-        'Fournisseur': item.additionalInfo.fournisseur || '',
-        'Styliste': item.additionalInfo.styliste || '',
-        'Penderie Style': item.additionalInfo.penderieStyle || '',
-        'Shooting Photos': item.additionalInfo.shootingPhotos || '',
-        'Showroom': item.additionalInfo.showroom || '',
-        'A garder': item.additionalInfo.aGarder || '',
-        'Auber': item.additionalInfo.auber || ''
+        'Marque': item.product[COL_MARQUE] || '',
+        'EAN': item.product[COL_EAN] || ''
       }));
 
       // Créer le workbook et la worksheet
@@ -1475,13 +1257,8 @@
         { wch: 15 }, // Référence
         { wch: 12 }, // Couleur
         { wch: 8 },  // Taille
-        { wch: 12 }, // Fournisseur
-        { wch: 12 }, // Styliste
-        { wch: 18 }, // Penderie Style
-        { wch: 15 }, // Shooting Photos
-        { wch: 20 }, // Showroom
-        { wch: 20 }, // A garder
-        { wch: 20 }  // Auber
+        { wch: 15 }, // Marque
+        { wch: 18 }  // EAN
       ];
       ws['!cols'] = colWidths;
 
