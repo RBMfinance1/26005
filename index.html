@@ -664,34 +664,75 @@
       const errorDiv = document.getElementById('loginError');
       
       try {
-        // Vérifier l'authentification avec hash
-        const isValid = await verifyAuthentication(enteredPassword);
-        
-        if (isValid) {
-          // Mot de passe correct
-          sessionStorage.setItem('authenticated', 'true');
-          sessionStorage.setItem('loginTime', new Date().toISOString());
-          document.getElementById('loginModal').style.display = 'none';
-          document.getElementById('logoutBtn').style.display = 'inline-block';
-          errorDiv.textContent = '';
+        // Vérifier si la fonction verifyAuthentication existe
+        if (typeof verifyAuthentication === 'function') {
+          // Utiliser la fonction du config.js
+          const isValid = await verifyAuthentication(enteredPassword);
           
-          // Log de connexion (optionnel)
-          console.log('Connexion réussie:', new Date().toISOString());
-          
+          if (isValid) {
+            // Mot de passe correct
+            sessionStorage.setItem('authenticated', 'true');
+            sessionStorage.setItem('loginTime', new Date().toISOString());
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('logoutBtn').style.display = 'inline-block';
+            errorDiv.textContent = '';
+            
+            // Log de connexion (optionnel)
+            console.log('Connexion réussie:', new Date().toISOString());
+            
+          } else {
+            // Mot de passe incorrect
+            errorDiv.textContent = '❌ Mot de passe incorrect';
+            document.getElementById('passwordInput').value = '';
+            document.getElementById('passwordInput').focus();
+            
+            // Animation d'erreur
+            document.getElementById('passwordInput').style.animation = 'shake 0.5s ease-in-out';
+            setTimeout(() => {
+              document.getElementById('passwordInput').style.animation = '';
+            }, 500);
+            
+            // Log de tentative échouée (optionnel)
+            console.warn('Tentative de connexion échouée:', new Date().toISOString());
+          }
         } else {
-          // Mot de passe incorrect
-          errorDiv.textContent = '❌ Mot de passe incorrect';
-          document.getElementById('passwordInput').value = '';
-          document.getElementById('passwordInput').focus();
+          // Fallback : vérification directe avec hash
+          console.warn('Fonction verifyAuthentication non trouvée, utilisation du fallback');
           
-          // Animation d'erreur
-          document.getElementById('passwordInput').style.animation = 'shake 0.5s ease-in-out';
-          setTimeout(() => {
-            document.getElementById('passwordInput').style.animation = '';
-          }, 500);
+          // Hash SHA-256 du mot de passe "262626"
+          const correctHash = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
           
-          // Log de tentative échouée (optionnel)
-          console.warn('Tentative de connexion échouée:', new Date().toISOString());
+          // Générer le hash du mot de passe saisi
+          const encoder = new TextEncoder();
+          const data = encoder.encode(enteredPassword);
+          const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const hashedPassword = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          
+          if (hashedPassword === correctHash) {
+            // Mot de passe correct
+            sessionStorage.setItem('authenticated', 'true');
+            sessionStorage.setItem('loginTime', new Date().toISOString());
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('logoutBtn').style.display = 'inline-block';
+            errorDiv.textContent = '';
+            
+            console.log('Connexion réussie (fallback):', new Date().toISOString());
+            
+          } else {
+            // Mot de passe incorrect
+            errorDiv.textContent = '❌ Mot de passe incorrect';
+            document.getElementById('passwordInput').value = '';
+            document.getElementById('passwordInput').focus();
+            
+            // Animation d'erreur
+            document.getElementById('passwordInput').style.animation = 'shake 0.5s ease-in-out';
+            setTimeout(() => {
+              document.getElementById('passwordInput').style.animation = '';
+            }, 500);
+            
+            console.warn('Tentative de connexion échouée (fallback):', new Date().toISOString());
+          }
         }
       } catch (error) {
         console.error('Erreur lors de la vérification:', error);
@@ -731,6 +772,11 @@
     
     // Vérifier l'authentification au chargement de la page
     window.addEventListener('DOMContentLoaded', function() {
+      // Debug : vérifier si config.js est chargé
+      console.log('Vérification du chargement de config.js...');
+      console.log('verifyAuthentication disponible:', typeof verifyAuthentication);
+      console.log('APP_CONFIG disponible:', typeof APP_CONFIG);
+      
       const isAuthenticated = sessionStorage.getItem('authenticated');
       const loginTime = sessionStorage.getItem('loginTime');
       
