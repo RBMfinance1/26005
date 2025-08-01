@@ -677,30 +677,27 @@
             document.getElementById('logoutBtn').style.display = 'inline-block';
             errorDiv.textContent = '';
             
-            // Log de connexion (optionnel)
-            console.log('Connexion réussie:', new Date().toISOString());
-            
-          } else {
-            // Mot de passe incorrect
-            errorDiv.textContent = '❌ Mot de passe incorrect';
-            document.getElementById('passwordInput').value = '';
-            document.getElementById('passwordInput').focus();
-            
-            // Animation d'erreur
-            document.getElementById('passwordInput').style.animation = 'shake 0.5s ease-in-out';
-            setTimeout(() => {
-              document.getElementById('passwordInput').style.animation = '';
-            }, 500);
-            
-            // Log de tentative échouée (optionnel)
-            console.warn('Tentative de connexion échouée:', new Date().toISOString());
+                      // Log de connexion (optionnel)
+          console.log('Connexion réussie:', new Date().toISOString());
+          
+        } else {
+          // Mot de passe incorrect
+          errorDiv.textContent = '❌ Mot de passe incorrect';
+          document.getElementById('passwordInput').value = '';
+          document.getElementById('passwordInput').focus();
+          
+          // Animation d'erreur
+          document.getElementById('passwordInput').style.animation = 'shake 0.5s ease-in-out';
+          setTimeout(() => {
+            document.getElementById('passwordInput').style.animation = '';
+          }, 500);
           }
         } else {
           // Fallback : vérification directe avec hash
           console.warn('Fonction verifyAuthentication non trouvée, utilisation du fallback');
           
           // Hash SHA-256 du mot de passe "262626"
-          const correctHash = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92";
+          const correctHash = "35a5ea9db6c0b4a0e946902c33e1759a9156c50fd3678078d5c6628a6ec62722";
           
           // Générer le hash du mot de passe saisi
           const encoder = new TextEncoder();
@@ -708,6 +705,8 @@
           const hashBuffer = await crypto.subtle.digest('SHA-256', data);
           const hashArray = Array.from(new Uint8Array(hashBuffer));
           const hashedPassword = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          
+
           
           if (hashedPassword === correctHash) {
             // Mot de passe correct
@@ -730,8 +729,6 @@
             setTimeout(() => {
               document.getElementById('passwordInput').style.animation = '';
             }, 500);
-            
-            console.warn('Tentative de connexion échouée (fallback):', new Date().toISOString());
           }
         }
       } catch (error) {
@@ -772,10 +769,7 @@
     
     // Vérifier l'authentification au chargement de la page
     window.addEventListener('DOMContentLoaded', function() {
-      // Debug : vérifier si config.js est chargé
-      console.log('Vérification du chargement de config.js...');
-      console.log('verifyAuthentication disponible:', typeof verifyAuthentication);
-      console.log('APP_CONFIG disponible:', typeof APP_CONFIG);
+
       
       const isAuthenticated = sessionStorage.getItem('authenticated');
       const loginTime = sessionStorage.getItem('loginTime');
@@ -820,6 +814,22 @@
       
       // Mettre à jour toutes les 5 minutes
       setTimeout(updateSessionTimer, 5 * 60 * 1000);
+    }
+    
+    // Fonction de test pour vérifier le hash (à utiliser dans la console)
+    async function testHash(password) {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(password);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      
+      console.log('Test de hash pour:', password);
+      console.log('Hash généré:', hash);
+      console.log('Hash attendu:', "35a5ea9db6c0b4a0e946902c33e1759a9156c50fd3678078d5c6628a6ec62722");
+      console.log('Correspondance:', hash === "35a5ea9db6c0b4a0e946902c33e1759a9156c50fd3678078d5c6628a6ec62722");
+      
+      return hash;
     }
     
     // Permettre la connexion avec la touche Entrée

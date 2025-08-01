@@ -1,7 +1,7 @@
 // Configuration de l'application
 const APP_CONFIG = {
   // Hash SHA-256 du mot de passe "262626"
-  PASSWORD_HASH: "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+  PASSWORD_HASH: "35a5ea9db6c0b4a0e946902c33e1759a9156c50fd3678078d5c6628a6ec62722",
   
   // Utilisateurs autorisés (optionnel)
   ALLOWED_USERS: ["admin", "user1", "user2"],
