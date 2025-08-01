@@ -10,7 +10,7 @@ const APP_CONFIG = {
   API_KEY: "rbm-2025-colisage-secure-key",
   
   // Configuration de l'application
-  APP_NAME: "EAN Follow-up samples",
+  APP_NAME: "EAN List",
   VERSION: "1.0.0",
   
   // URLs de la base de données
