@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>EAN Follow-up samples</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="config.js"></script>
+  <script type="module">
+    import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
+
+    let codeReader = null;
+    let isScanning = false;
+
+    // Scanner via flux vidéo en temps réel
+    window.startCamera = async function() {
+      const video = document.getElementById('video');
+      const scanButton = document.getElementById('scanButton');
+      const stopButton = document.getElementById('stopButton');
+      
+      try {
+        // Arrêter toute session précédente
+        if (codeReader) {
+          codeReader.reset();
+        }
+        
+        codeReader = new BrowserMultiFormatReader();
+        const constraints = {
+          video: {
+            facingMode: 'environment', // Caméra arrière
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+        
+        await codeReader.decodeFromConstraints(constraints, video, (result, err) => {
+          if (result && isScanning) {
+            document.getElementById("barcodeInput").value = result.text;
+            stopCamera();
+            findProduct();
+            // Vibration si supportée
+            if (navigator.vibrate) {
+              navigator.vibrate(200);
+            }
+          }
+        });
+        
+        isScanning = true;
+        video.style.display = 'block';
+        scanButton.style.display = 'none';
+        stopButton.style.display = 'inline-block';
+        document.getElementById('scannerContainer').style.display = 'block';
+        
+      } catch (err) {
+        console.error('Erreur caméra:', err);
+        alert('Impossible d\'accéder à la caméra. Vérifiez les permissions.');
+        resetCameraButtons();
+      }
+    };
+
+    window.stopCamera = function() {
+      isScanning = false;
+      
+      if (codeReader) {
+        try {
+          codeReader.reset();
+        } catch (e) {
+          console.log('Erreur lors de l\'arrêt de la caméra:', e);
+        }
+        codeReader = null;
+      }
+      
+      resetCameraButtons();
+    };
+
+    function resetCameraButtons() {
+      document.getElementById('video').style.display = 'none';
+      document.getElementById('scanButton').style.display = 'inline-block';
+      document.getElementById('stopButton').style.display = 'none';
+      document.getElementById('scannerContainer').style.display = 'none';
+    }
+  </script>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: white;
+      margin: 0;
+      padding: 10px;
+      color: #2c3e50;
+      min-height: 100vh;
+    }
+    
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 15px;
+      max-width: 100%;
+      margin: auto;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+      background: linear-gradient(45deg, #667eea, #764ba2);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-size: 1.5em;
+    }
+    
+    .section {
+      margin-bottom: 20px;
+      padding: 15px;
+      border: 1px solid #e0e0e0;
+      border-radius: 10px;
+      background: #f8f9fa;
+    }
+    
+    .section h3 {
+      margin: 0 0 15px 0;
+      color: #495057;
+      font-size: 1.1em;
+    }
+    
+    input[type="file"], input[type="text"], select, textarea {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 16px; /* Évite le zoom sur iOS */
+    }
+    
+    textarea {
+      min-height: 60px;
+      resize: vertical;
+    }
+    
+    button {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      border: none;
+      color: white;
+      padding: 12px 20px;
+      margin: 5px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 14px;
+      min-height: 44px; /* Taille minimum recommandée pour mobile */
+    }
+    
+    button:active {
+      transform: scale(0.98);
+    }
+    
+    .button-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    
+    .button-row button {
+      flex: 1;
+      min-width: 120px;
+    }
+    
+    .export-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 15px;
+    }
+    
+    .export-buttons button {
+      flex: 1;
+      min-width: 140px;
+    }
+    
+    #scannerContainer {
+      display: none;
+      text-align: center;
+      margin: 15px 0;
+    }
+    
+    #video {
+      width: 100%;
+      max-width: 400px;
+      height: 300px;
+      border: 2px solid #667eea;
+      border-radius: 10px;
+      object-fit: cover;
+    }
+    
+    .scanner-overlay {
+      position: relative;
+      display: inline-block;
+    }
+    
+    .scanner-frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 250px;
+      height: 150px;
+      border: 2px solid #00ff00;
+      border-radius: 10px;
+      pointer-events: none;
+    }
+    
+    .scanner-corners {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #00ff00;
+    }
+    
+    .corner-tl { top: -2px; left: -2px; border-right: none; border-bottom: none; }
+    .corner-tr { top: -2px; right: -2px; border-left: none; border-bottom: none; }
+    .corner-bl { bottom: -2px; left: -2px; border-right: none; border-top: none; }
+    .corner-br { bottom: -2px; right: -2px; border-left: none; border-top: none; }
+    
+    #results, #selectedList {
+      margin-top: 15px;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      background: #f8f9fa;
+    }
+    
+    .item {
+      padding: 12px;
+      border-bottom: 1px solid #ccc;
+      line-height: 1.4;
+    }
+    
+    .item:last-child {
+      border-bottom: none;
+    }
+    
+    .item strong {
+      color: #667eea;
+      font-size: 1.1em;
+    }
+    
+    /* Formulaire d'ajout d'informations */
+    #addInfoForm {
+      background: #e8f4fd;
+      border: 2px solid #667eea;
+      border-radius: 10px;
+      padding: 20px;
+      margin: 20px 0;
+      display: none;
+    }
+    
+    .form-row {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+    }
+    
+    .form-group {
+      flex: 1;
+      min-width: 200px;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      color: #495057;
+    }
+    
+    .radio-group {
+      display: flex;
+      gap: 15px;
+      margin-top: 5px;
+    }
+    
+    .radio-group label {
+      display: flex;
+      align-items: center;
+      font-weight: normal;
+      margin-bottom: 0;
+    }
+    
+    .radio-group input[type="radio"] {
+      width: auto;
+      margin: 0 5px 0 0;
+    }
+    
+    /* Style pour les éléments modifiables dans la liste */
+    .editable-item {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 15px;
+      margin-bottom: 10px;
+    }
+    
+    .edit-form {
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      padding: 15px;
+      margin-top: 10px;
+      display: none;
+    }
+    
+    #fileStatus {
+      color: #28a745;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    
+    .scan-instruction {
+      text-align: center;
+      color: #666;
+      font-size: 0.9em;
+      margin: 10px 0;
+    }
+    
+    #productListContainer {
+      background: #f8f9fa;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 10px;
+      margin: 15px 0;
+    }
+    
+    #productListContainer h4 {
+      margin: 0 0 10px 0;
+      color: #495057;
+    }
+    
+    #searchInput {
+      width: 100%;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+      font-size: 14px;
+    }
+    
+    .product-item {
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    
+    .product-item:hover {
+      background-color: #e9ecef;
+    }
+    
+    .product-item:last-child {
+      border-bottom: none;
+    }
+    
+    .product-ref {
+      font-weight: bold;
+      color: #667eea;
+      font-size: 1.1em;
+    }
+    
+    .product-details {
+      font-size: 0.9em;
+      color: #666;
+      margin-top: 5px;
+    }
+    
+    .no-results {
+      text-align: center;
+      padding: 20px;
+      color: #6c757d;
+      font-style: italic;
+    }
+    
+    /* === ÉCRAN DE CONNEXION === */
+    .login-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      background: #ffffff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+    }
+    
+    .login-card {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      padding: 40px;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+      text-align: center;
+      max-width: 400px;
+      width: 90%;
+      margin: 20px;
+      border: 2px solid #5a67d8;
+      animation: cardAppear 0.4s ease-out;
+    }
+    
+    .login-card h2 {
+      margin: 0 0 15px 0;
+      color: white;
+      font-size: 1.5em;
+      font-weight: 600;
+    }
+    
+    .login-card p {
+      color: rgba(255, 255, 255, 0.9);
+      margin-bottom: 30px;
+      font-size: 1em;
+      line-height: 1.4;
+    }
+    
+    .login-form input[type="password"] {
+      width: 100%;
+      padding: 15px;
+      margin: 15px 0;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 10px;
+      font-size: 16px;
+      text-align: center;
+      transition: all 0.3s ease;
+      background: rgba(255, 255, 255, 0.9);
+      color: #333;
+    }
+    
+    .login-form input[type="password"]:focus {
+      border-color: white;
+      outline: none;
+      background: white;
+      box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+    }
+    
+    .login-form button {
+      width: 100%;
+      padding: 15px;
+      background: white;
+      border: 2px solid white;
+      color: #667eea;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin-top: 10px;
+    }
+    
+    .login-form button:hover {
+      background: rgba(255, 255, 255, 0.9);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(255, 255, 255, 0.3);
+    }
+    
+    .login-form button:active {
+      transform: translateY(0);
+    }
+    
+    .login-error {
+      color: #fff;
+      background: rgba(231, 76, 60, 0.8);
+      font-size: 0.9em;
+      margin-top: 15px;
+      min-height: 20px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 2px solid #e74c3c;
+    }
+    
+    @keyframes cardAppear {
+      from {
+        opacity: 0;
+        transform: translateY(-30px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-10px); }
+      75% { transform: translateX(10px); }
+    }
+    
+    @media (max-width: 768px) {
+      .container {
+        padding: 15px;
+        margin: 5px;
+      }
+      
+      h1 {
+        font-size: 1.3em;
+      }
+      
+      .section {
+        padding: 12px;
+      }
+      
+      button {
+        padding: 10px 15px;
+        font-size: 13px;
+      }
+      
+      #video {
+        height: 250px;
+      }
+      
+      .scanner-frame {
+        width: 200px;
+        height: 120px;
+      }
+      
+      #productList {
+        max-height: 250px !important;
+      }
+      
+      .product-item {
+        padding: 8px;
+      }
+      
+      .product-ref {
+        font-size: 1em;
+      }
+      
+      .product-details {
+        font-size: 0.8em;
+      }
+      
+      .form-row {
+        flex-direction: column;
+        gap: 10px;
+      }
+      
+      .form-group {
+        min-width: auto;
+      }
+      
+      .radio-group {
+        flex-direction: column;
+        gap: 10px;
+      }
+      
+      .export-buttons {
+        flex-direction: column;
+      }
+      
+      .export-buttons button {
+        min-width: auto;
+      }
+      
+      /* Login responsive */
+      .login-card {
+        padding: 30px 25px;
+        margin: 15px;
+        max-width: 350px;
+      }
+      
+      .login-card h2 {
+        font-size: 1.3em;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Zone de connexion -->
+  <div id="loginModal" class="login-modal">
+    <div class="login-card">
+      <h2>🔐 Authentification</h2>
+      <p>Entrez le mot de passe pour continuer</p>
+      
+      <div class="login-form">
+        <input type="password" id="passwordInput" placeholder="Mot de passe" />
+        <button onclick="checkPassword()">🔑 Valider</button>
+        <div id="loginError" class="login-error"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application principale -->
+  <div id="mainApp" class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+      <h1>📱 EAN Follow-up samples</h1>
+      <button onclick="logout()" id="logoutBtn" style="background: #dc3545; padding: 8px 12px; font-size: 12px; display: none;">🚪 Déconnexion</button>
+    </div>
+
+    <div class="section">
+      <h3>1️⃣ Charger la base de données</h3>
+      <div class="button-row">
+        <button onclick="loadOnlineCSV()">🌐 Charger BDD en ligne</button>
+        <button onclick="document.getElementById('csvFile').click()">📁 Charger fichier local</button>
+      </div>
+      <input type="file" id="csvFile" accept=".csv" style="display:none;" onchange="loadCSV()" />
+      <div id="fileStatus"></div>
+    </div>
+
+    <div class="section">
+      <h3>2️⃣ Scanner un code-barres</h3>
+      
+      <div class="button-row">
+        <button id="scanButton" onclick="startCamera()">📷 Scanner en direct</button>
+        <button id="stopButton" onclick="stopCamera()" style="display:none;">⏹️ Arrêter</button>
+        <button onclick="showProductList()">📋 Choisir dans la liste</button>
+      </div>
+      
+      <div id="scannerContainer">
+        <div class="scanner-overlay">
+          <video id="video" playsinline></video>
+          <div class="scanner-frame">
+            <div class="scanner-corners corner-tl"></div>
+            <div class="scanner-corners corner-tr"></div>
+            <div class="scanner-corners corner-bl"></div>
+            <div class="scanner-corners corner-br"></div>
+          </div>
+        </div>
+        <div class="scan-instruction">Placez le code-barres dans le cadre</div>
+      </div>
+      
+      <div id="productListContainer" style="display:none;">
+        <h4>🔍 Rechercher une référence</h4>
+        <input type="text" id="searchInput" placeholder="Rechercher par référence, code, marque..." onkeyup="filterProducts()" />
+        <div id="productList" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; border-radius: 5px; margin: 10px 0;"></div>
+        <button onclick="hideProductList()" style="background: #6c757d;">❌ Fermer la liste</button>
+      </div>
+      
+      <label>⌨️ Ou saisir manuellement :</label>
+      <input type="text" id="barcodeInput" placeholder="Entrer un code EAN..." />
+      <button onclick="findProduct()">🔍 Rechercher</button>
+    </div>
+
+    <div id="results" style="display:none;"></div>
+
+    <!-- Formulaire d'ajout d'informations -->
+    <div id="addInfoForm">
+      <h3 style="margin-top: 0; color: #667eea;">📝 Informations complémentaires</h3>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label for="fournisseur">🏪 Fournisseur (8 car. max)</label>
+          <input type="text" id="fournisseur" maxlength="8" placeholder="Ex: SUP12345">
+        </div>
+        
+        <div class="form-group">
+          <label for="styliste">👤 Styliste</label>
+          <select id="styliste">
+            <option value="">-- Sélectionner --</option>
+            <!-- 
+            ========================================
+            GESTION DES STYLISTES - ZONE MODIFIABLE
+            ========================================
+            Pour ajouter un styliste : dupliquer une ligne <option> et changer le nom
+            Pour supprimer un styliste : supprimer la ligne <option> correspondante
+            
+            Exemple d'ajout :
+            <option value="NouveauNom">NouveauNom</option>
+            -->
+            <option value="Anais">Anais</option>
+            <option value="Clementine">Clementine</option>
+            <option value="Delphine">Anais</option>
+            <option value="Fred">Fred</option>
+            <option value="Gaelle">Gaelle</option>
+            <option value="Meixuan">Meixuan</option>
+            
+            <!-- 
+            ========================================
+            FIN DE LA ZONE MODIFIABLE DES STYLISTES
+            ========================================
+            -->
+          </select>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label for="penderieStyle">👗 Penderie Style</label>
+          <select id="penderieStyle">
+            <option value="">-- Sélectionner --</option>
+            <option value="Oui">Oui</option>
+            <option value="A envoyer à Paris">A envoyer à Paris</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="shootingPhotos">📸 Shooting Photos</label>
+          <select id="shootingPhotos">
+            <option value="">-- Sélectionner --</option>
+            <option value="Oui">Oui</option>
+            <option value="Non">Non</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label for="showroom">🏢 Showroom</label>
+          <textarea id="showroom" placeholder="Informations showroom..."></textarea>
+        </div>
+      </div>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label for="aGarder">💾 A garder</label>
+          <textarea id="aGarder" placeholder="Informations à garder..."></textarea>
+        </div>
+        
+        <div class="form-group">
+          <label for="auber">📍 Auber</label>
+          <textarea id="auber" placeholder="Informations Auber..."></textarea>
+        </div>
+      </div>
+      
+      <div class="button-row">
+        <button onclick="addToListWithInfo()" style="background: #28a745;">✅ Ajouter à la liste</button>
+        <button onclick="cancelAddInfo()" style="background: #dc3545;">❌ Annuler</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>📋 Références sélectionnées</h3>
+      <div id="selectedList">Aucune référence sélectionnée</div>
+      <div class="export-buttons">
+        <button onclick="exportPDF()">📄 Exporter PDF</button>
+        <button onclick="exportExcel()">📊 Exporter Excel</button>
+        <button onclick="clearList()" style="background: #dc3545;">🗑️ Vider la liste</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // === GESTION DE L'AUTHENTIFICATION SÉCURISÉE ===
+    
+    async function checkPassword() {
+      const enteredPassword = document.getElementById('passwordInput').value;
+      const errorDiv = document.getElementById('loginError');
+      
+      try {
+        // Vérifier l'authentification avec hash
+        const isValid = await verifyAuthentication(enteredPassword);
+        
+        if (isValid) {
+          // Mot de passe correct
+          sessionStorage.setItem('authenticated', 'true');
+          sessionStorage.setItem('loginTime', new Date().toISOString());
+          document.getElementById('loginModal').style.display = 'none';
+          document.getElementById('logoutBtn').style.display = 'inline-block';
+          errorDiv.textContent = '';
+          
+          // Log de connexion (optionnel)
+          console.log('Connexion réussie:', new Date().toISOString());
+          
+        } else {
+          // Mot de passe incorrect
+          errorDiv.textContent = '❌ Mot de passe incorrect';
+          document.getElementById('passwordInput').value = '';
+          document.getElementById('passwordInput').focus();
+          
+          // Animation d'erreur
+          document.getElementById('passwordInput').style.animation = 'shake 0.5s ease-in-out';
+          setTimeout(() => {
+            document.getElementById('passwordInput').style.animation = '';
+          }, 500);
+          
+          // Log de tentative échouée (optionnel)
+          console.warn('Tentative de connexion échouée:', new Date().toISOString());
+        }
+      } catch (error) {
+        console.error('Erreur lors de la vérification:', error);
+        errorDiv.textContent = '❌ Erreur de vérification';
+      }
+    }
+    
+    function logout() {
+      if (confirm('🚪 Êtes-vous sûr de vouloir vous déconnecter ?')) {
+        // Nettoyer toutes les données de session
+        sessionStorage.removeItem('authenticated');
+        sessionStorage.removeItem('loginTime');
+        
+        // Réinitialiser l'interface
+        document.getElementById('loginModal').style.display = 'flex';
+        document.getElementById('logoutBtn').style.display = 'none';
+        document.getElementById('passwordInput').value = '';
+        
+        // Vider les données de l'application
+        database = [];
+        selectedItems = [];
+        currentProductToAdd = null;
+        
+        // Mettre à jour l'interface
+        updateSelectedList();
+        document.getElementById('fileStatus').innerHTML = '';
+        document.getElementById('results').style.display = 'none';
+        document.getElementById('addInfoForm').style.display = 'none';
+        
+        // Focus sur le champ mot de passe
+        setTimeout(() => {
+          document.getElementById('passwordInput').focus();
+        }, 300);
+        
+        console.log('Déconnexion effectuée:', new Date().toISOString());
+      }
+    }
+    
+    // Vérifier l'authentification au chargement de la page
+    window.addEventListener('DOMContentLoaded', function() {
+      const isAuthenticated = sessionStorage.getItem('authenticated');
+      const loginTime = sessionStorage.getItem('loginTime');
+      
+      // Vérifier si la session n'a pas expiré (8 heures)
+      const sessionExpiration = 8 * 60 * 60 * 1000; // 8 heures en millisecondes
+      const isSessionValid = loginTime && (new Date() - new Date(loginTime)) < sessionExpiration;
+      
+      if (isAuthenticated === 'true' && isSessionValid) {
+        document.getElementById('loginModal').style.display = 'none';
+        document.getElementById('logoutBtn').style.display = 'inline-block';
+        
+        // Afficher le temps restant de session
+        updateSessionTimer();
+      } else {
+        // Session expirée ou inexistante
+        sessionStorage.removeItem('authenticated');
+        sessionStorage.removeItem('loginTime');
+        document.getElementById('loginModal').style.display = 'flex';
+        document.getElementById('logoutBtn').style.display = 'none';
+        
+        // Focus automatique sur le champ mot de passe
+        setTimeout(() => {
+          document.getElementById('passwordInput').focus();
+        }, 500);
+      }
+    });
+    
+    // Fonction pour mettre à jour le timer de session
+    function updateSessionTimer() {
+      const loginTime = sessionStorage.getItem('loginTime');
+      if (!loginTime) return;
+      
+      const sessionExpiration = 8 * 60 * 60 * 1000;
+      const timeLeft = sessionExpiration - (new Date() - new Date(loginTime));
+      
+      if (timeLeft <= 0) {
+        // Session expirée
+        logout();
+        return;
+      }
+      
+      // Mettre à jour toutes les 5 minutes
+      setTimeout(updateSessionTimer, 5 * 60 * 1000);
+    }
+    
+    // Permettre la connexion avec la touche Entrée
+    document.addEventListener('DOMContentLoaded', function() {
+      const passwordInput = document.getElementById('passwordInput');
+      if (passwordInput) {
+        passwordInput.addEventListener('keypress', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            checkPassword();
+          }
+        });
+      }
+    });
+
+    // === VARIABLES DE L'APPLICATION ===
+    let database = [];
+    let selectedItems = [];
+    let currentProductToAdd = null; // Produit en cours d'ajout
+
+    // Zone Configurable
+    // Changer les numéros des colonnes pour adapter à n'importe quel tableau
+    // Liste des colonnes
+
+    const COL_REF = 0;
+    const COL_CODE = 1;
+    const COL_COULEUR = 2;
+    const COL_TAILLE = 3;
+    const COL_MARQUE = 4;
+    const COL_EAN = 5;
+
+    function loadCSV() {
+      const file = document.getElementById('csvFile').files[0];
+      if (!file) return alert("⚠️ Sélectionnez un fichier CSV.");
+      
+      Papa.parse(file, {
+        header: false,
+        delimiter: ";",
+        skipEmptyLines: true,
+        complete: results => {
+          database = results.data.slice(1);
+          document.getElementById("fileStatus").innerHTML = 
+            `✅ ${database.length} articles chargés avec succès`;
+        },
+        error: (error) => {
+          alert("❌ Erreur lors du chargement du fichier CSV");
+          console.error(error);
+        }
+      });
+    }
+
+    function loadOnlineCSV() {
+      document.getElementById("fileStatus").innerHTML = "⏳ Chargement de la base de données en ligne...";
+      
+      // URLs corrigées pour la branche gh-pages
+      const alternativeUrls = [
+        // 1. JSDelivr CDN avec branche gh-pages
+        'https://cdn.jsdelivr.net/gh/rbmfinance1/26005@gh-pages/bdd.csv',
+        
+        // 2. GitHub Raw avec branche gh-pages
+        'https://raw.githubusercontent.com/rbmfinance1/26005/gh-pages/bdd.csv',
+        
+        // 3. URL originale GitHub Pages (qui fonctionne pour le téléchargement)
+        'https://rbmfinance1.github.io/26005/bdd.csv'
+      ];
+      
+      async function tryUrls(urlIndex = 0) {
+        if (urlIndex >= alternativeUrls.length) {
+          console.log('Toutes les sources ont échoué');
+          showManualDownloadOption();
+          return;
+        }
+        
+        const currentUrl = alternativeUrls[urlIndex];
+        console.log(`Tentative ${urlIndex + 1}:`, currentUrl);
+        
+        try {
+          const response = await fetch(currentUrl, {
+            method: 'GET',
+            mode: 'cors',
+            cache: 'no-cache',
+            headers: {
+              'Accept': 'text/csv,text/plain,*/*'
+            }
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+          
+          const csvData = await response.text();
+          
+          // Vérifier que c'est bien du CSV
+          if (csvData.includes('<!DOCTYPE') || csvData.includes('<html>')) {
+            throw new Error('Contenu HTML reçu au lieu de CSV');
+          }
+          
+          if (csvData.trim().length < 10) {
+            throw new Error('Fichier CSV vide ou trop court');
+          }
+          
+          console.log('✅ Chargement réussi avec:', currentUrl);
+          processCsvData(csvData);
+          
+        } catch (error) {
+          console.log(`Source ${urlIndex + 1} échouée:`, error.message);
+          // Essayer la source suivante
+          tryUrls(urlIndex + 1);
+        }
+      }
+      
+      // Commencer par la première source
+      tryUrls(0);
+    }
+
+    function showManualDownloadOption() {
+      document.getElementById("fileStatus").innerHTML = 
+        `<div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin: 10px 0;">
+          <strong>📥 Téléchargement manuel requis</strong><br/><br/>
+          <div style="margin: 10px 0;">
+            <a href="https://rbmfinance1.github.io/26005/bdd.csv" 
+               download="bdd.csv" 
+               style="background: #007bff; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px; display: inline-block; margin: 5px 0;">
+              📥 Télécharger bdd.csv
+            </a>
+          </div>
+          <small style="color: #856404;">
+            1. Cliquez sur le lien ci-dessus pour télécharger<br/>
+            2. Une fois téléchargé, utilisez "📁 Charger fichier local"<br/>
+            3. Sélectionnez le fichier bdd.csv téléchargé
+          </small>
+        </div>`;
+    }
+
+    function processCsvData(csvData) {
+      try {
+        Papa.parse(csvData, {
+          header: false,
+          delimiter: ";",
+          skipEmptyLines: true,
+          complete: results => {
+            if (results.data && results.data.length > 1) {
+              database = results.data.slice(1);
+              document.getElementById("fileStatus").innerHTML = 
+                `✅ ${database.length} articles chargés depuis la base en ligne`;
+            } else {
+              throw new Error('Fichier CSV vide ou invalide');
+            }
+          },
+          error: (error) => {
+            console.error('Erreur Papa Parse:', error);
+            document.getElementById("fileStatus").innerHTML = 
+              "❌ Erreur lors du traitement du fichier CSV";
+          }
+        });
+      } catch (error) {
+        console.error('Erreur de traitement CSV:', error);
+        document.getElementById("fileStatus").innerHTML = 
+          "❌ Erreur lors du traitement des données";
+      }
+    }
+
+    function findProduct() {
+      const code = document.getElementById("barcodeInput").value.trim();
+      if (!code) {
+        alert("⚠️ Veuillez entrer un code EAN");
+        return;
+      }
+      
+      if (database.length === 0) {
+        alert("⚠️ Veuillez d'abord charger un fichier CSV");
+        return;
+      }
+      
+      const result = database.find(row => row[COL_EAN] === code);
+      const rd = document.getElementById("results");
+
+      if (result) {
+        currentProductToAdd = result;
+        rd.style.display = "block";
+        rd.innerHTML = `
+          <div class="item">
+            <strong>✅ Article trouvé !</strong><br/><br/>
+            <strong>Réf :</strong> ${result[COL_REF] || 'N/A'}<br/>
+            <strong>Code Article :</strong> ${result[COL_CODE] || 'N/A'}<br/>
+            <strong>Marque :</strong> ${result[COL_MARQUE] || 'N/A'}<br/>
+            <strong>Couleur :</strong> ${result[COL_COULEUR] || 'N/A'}<br/>
+            <strong>Taille :</strong> ${result[COL_TAILLE] || 'N/A'}<br/>
+            <strong>EAN :</strong> ${result[COL_EAN] || 'N/A'}<br/><br/>
+            <button onclick="showAddInfoForm()">➕ Ajouter à la liste</button>
+          </div>`;
+      } else {
+        rd.style.display = "block";
+        rd.innerHTML = `
+          <div class="item">
+            <strong>❌ Aucun article trouvé</strong><br/>
+            Code EAN recherché : <strong>${code}</strong><br/>
+            Vérifiez le code ou la base de données.<br/><br/>
+            <button onclick="startCamera()">📷 Essayer avec la caméra</button>
+          </div>`;
+      }
+      
+      // Faire défiler vers les résultats
+      rd.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function showAddInfoForm() {
+      document.getElementById('addInfoForm').style.display = 'block';
+      // Réinitialiser le formulaire
+      resetAddInfoForm();
+      // Faire défiler vers le formulaire
+      document.getElementById('addInfoForm').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function resetAddInfoForm() {
+      document.getElementById('fournisseur').value = '';
+      document.getElementById('styliste').value = '';
+      document.getElementById('penderieStyle').value = '';
+      document.getElementById('shootingPhotos').value = '';
+      document.getElementById('showroom').value = '';
+      document.getElementById('aGarder').value = '';
+      document.getElementById('auber').value = '';
+    }
+
+    function addToListWithInfo() {
+      if (!currentProductToAdd) {
+        alert("⚠️ Aucun produit sélectionné");
+        return;
+      }
+
+      // Vérifier si l'item existe déjà
+      const exists = selectedItems.some(existing => existing.product[COL_EAN] === currentProductToAdd[COL_EAN]);
+      
+      if (exists) {
+        alert("⚠️ Cet article est déjà dans la liste");
+        return;
+      }
+
+      // Récupérer les valeurs du formulaire
+      const shootingPhotos = document.getElementById('shootingPhotos').value;
+      
+      const itemWithInfo = {
+        product: currentProductToAdd,
+        additionalInfo: {
+          fournisseur: document.getElementById('fournisseur').value,
+          styliste: document.getElementById('styliste').value,
+          penderieStyle: document.getElementById('penderieStyle').value,
+          shootingPhotos: shootingPhotos,
+          showroom: document.getElementById('showroom').value,
+          aGarder: document.getElementById('aGarder').value,
+          auber: document.getElementById('auber').value
+        }
+      };
+
+      selectedItems.push(itemWithInfo);
+      updateSelectedList();
+      
+      // Masquer le formulaire et les résultats
+      document.getElementById('addInfoForm').style.display = 'none';
+      document.getElementById("results").style.display = "none";
+      
+      // Vider le champ de saisie
+      document.getElementById("barcodeInput").value = "";
+      currentProductToAdd = null;
+      
+      // Feedback visuel
+      if (navigator.vibrate) {
+        navigator.vibrate(100);
+      }
+      
+      // Afficher un message de confirmation
+      showConfirmationMessage();
+    }
+
+    function cancelAddInfo() {
+      document.getElementById('addInfoForm').style.display = 'none';
+      currentProductToAdd = null;
+    }
+
+    function showConfirmationMessage() {
+      const confirmDiv = document.createElement('div');
+      confirmDiv.innerHTML = `
+        <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 10px; border-radius: 5px; margin: 10px 0; text-align: center;">
+          ✅ Article ajouté avec succès !<br/>
+          <button onclick="startCamera(); this.parentElement.parentElement.remove();" style="margin-top: 10px;">📷 Scanner un autre article</button>
+          <button onclick="this.parentElement.parentElement.remove();" style="margin-top: 10px; background: #6c757d;">❌ Fermer</button>
+        </div>
+      `;
+      
+      // Insérer le message après la section de scan
+      const scanSection = document.querySelector('.section:nth-child(2)');
+      scanSection.parentNode.insertBefore(confirmDiv, scanSection.nextSibling);
+      
+      // Supprimer automatiquement le message après 5 secondes
+      setTimeout(() => {
+        if (confirmDiv.parentNode) {
+          confirmDiv.remove();
+        }
+      }, 5000);
+    }
+
+    function updateSelectedList() {
+      const listContainer = document.getElementById("selectedList");
+      
+      if (selectedItems.length === 0) {
+        listContainer.innerHTML = "Aucune référence sélectionnée";
+        return;
+      }
+      
+      listContainer.innerHTML = selectedItems.map((item, index) =>
+        `<div class="editable-item">
+          <div>
+            <strong>${item.product[COL_REF] || 'N/A'}</strong> – ${item.product[COL_CODE] || 'N/A'}<br/>
+            Taille: ${item.product[COL_TAILLE] || 'N/A'} | Marque: ${item.product[COL_MARQUE] || 'N/A'} | Couleur: ${item.product[COL_COULEUR] || 'N/A'}<br/>
+            <small>EAN: ${item.product[COL_EAN] || 'N/A'}</small><br/>
+            
+            <div style="margin-top: 10px; color: #666;">
+              ${item.additionalInfo.fournisseur ? `<strong>Fournisseur:</strong> ${item.additionalInfo.fournisseur}<br/>` : ''}
+              ${item.additionalInfo.styliste ? `<strong>Styliste:</strong> ${item.additionalInfo.styliste}<br/>` : ''}
+              ${item.additionalInfo.penderieStyle ? `<strong>Penderie Style:</strong> ${item.additionalInfo.penderieStyle}<br/>` : ''}
+              ${item.additionalInfo.shootingPhotos ? `<strong>Shooting Photos:</strong> ${item.additionalInfo.shootingPhotos}<br/>` : ''}
+              ${item.additionalInfo.showroom ? `<strong>Showroom:</strong> ${item.additionalInfo.showroom}<br/>` : ''}
+              ${item.additionalInfo.aGarder ? `<strong>A garder:</strong> ${item.additionalInfo.aGarder}<br/>` : ''}
+              ${item.additionalInfo.auber ? `<strong>Auber:</strong> ${item.additionalInfo.auber}<br/>` : ''}
+            </div>
+            
+            <div style="margin-top: 10px;">
+              <button onclick="editItem(${index})" style="background: #ffc107; color: #000; padding: 5px 10px; font-size: 12px;">✏️ Modifier</button>
+              <button onclick="removeFromList(${index})" style="background: #dc3545; padding: 5px 10px; font-size: 12px;">🗑️ Supprimer</button>
+            </div>
+          </div>
+          
+          <div id="editForm${index}" class="edit-form">
+            <h4>Modifier les informations</h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Fournisseur</label>
+                <input type="text" id="editFournisseur${index}" value="${item.additionalInfo.fournisseur}" maxlength="8">
+              </div>
+              <div class="form-group">
+                <label>Styliste</label>
+                <select id="editStyliste${index}">
+                  <option value="">-- Sélectionner --</option>
+                  <option value="Gaelle" ${item.additionalInfo.styliste === 'Gaelle' ? 'selected' : ''}>Gaelle</option>
+                  <option value="Fred" ${item.additionalInfo.styliste === 'Fred' ? 'selected' : ''}>Fred</option>
+                  <option value="Clementine" ${item.additionalInfo.styliste === 'Clementine' ? 'selected' : ''}>Clementine</option>
+                  <option value="Guillaume" ${item.additionalInfo.styliste === 'Guillaume' ? 'selected' : ''}>Guillaume</option>
+                  <option value="Meixuan" ${item.additionalInfo.styliste === 'Meixuan' ? 'selected' : ''}>Meixuan</option>
+                  <option value="Anais" ${item.additionalInfo.styliste === 'Anais' ? 'selected' : ''}>Anais</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Penderie Style</label>
+                <select id="editPenderieStyle${index}">
+                  <option value="">-- Sélectionner --</option>
+                  <option value="Oui" ${item.additionalInfo.penderieStyle === 'Oui' ? 'selected' : ''}>Oui</option>
+                  <option value="A envoyer à Paris" ${item.additionalInfo.penderieStyle === 'A envoyer à Paris' ? 'selected' : ''}>A envoyer à Paris</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Shooting Photos</label>
+                <select id="editShootingPhotos${index}">
+                  <option value="">-- Sélectionner --</option>
+                  <option value="Oui" ${item.additionalInfo.shootingPhotos === 'Oui' ? 'selected' : ''}>Oui</option>
+                  <option value="Non" ${item.additionalInfo.shootingPhotos === 'Non' ? 'selected' : ''}>Non</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Showroom</label>
+                <textarea id="editShowroom${index}">${item.additionalInfo.showroom}</textarea>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>A garder</label>
+                <textarea id="editAGarder${index}">${item.additionalInfo.aGarder}</textarea>
+              </div>
+              <div class="form-group">
+                <label>Auber</label>
+                <textarea id="editAuber${index}">${item.additionalInfo.auber}</textarea>
+              </div>
+            </div>
+            <div class="button-row">
+              <button onclick="saveEdit(${index})" style="background: #28a745;">💾 Sauvegarder</button>
+              <button onclick="cancelEdit(${index})" style="background: #6c757d;">❌ Annuler</button>
+            </div>
+          </div>
+        </div>`
+      ).join("");
+    }
+
+    function editItem(index) {
+      document.getElementById(`editForm${index}`).style.display = 'block';
+    }
+
+    function cancelEdit(index) {
+      document.getElementById(`editForm${index}`).style.display = 'none';
+    }
+
+    function saveEdit(index) {
+      const shootingPhotos = document.getElementById(`editShootingPhotos${index}`).value;
+      
+      selectedItems[index].additionalInfo = {
+        fournisseur: document.getElementById(`editFournisseur${index}`).value,
+        styliste: document.getElementById(`editStyliste${index}`).value,
+        penderieStyle: document.getElementById(`editPenderieStyle${index}`).value,
+        shootingPhotos: shootingPhotos,
+        showroom: document.getElementById(`editShowroom${index}`).value,
+        aGarder: document.getElementById(`editAGarder${index}`).value,
+        auber: document.getElementById(`editAuber${index}`).value
+      };
+      
+      updateSelectedList();
+    }
+
+    function removeFromList(index) {
+      selectedItems.splice(index, 1);
+      updateSelectedList();
+    }
+
+    function clearList() {
+      if (selectedItems.length === 0) return;
+      
+      if (confirm("🗑️ Êtes-vous sûr de vouloir vider la liste ?")) {
+        selectedItems = [];
+        updateSelectedList();
+      }
+    }
+
+    function showProductList() {
+      if (database.length === 0) {
+        alert("⚠️ Veuillez d'abord charger un fichier CSV");
+        return;
+      }
+      
+      document.getElementById('productListContainer').style.display = 'block';
+      document.getElementById('searchInput').value = '';
+      displayProducts(database);
+      
+      // Faire défiler vers la liste
+      document.getElementById('productListContainer').scrollIntoView({ behavior: 'smooth' });
+      
+      // Focus sur le champ de recherche
+      setTimeout(() => {
+        document.getElementById('searchInput').focus();
+      }, 300);
+    }
+
+    function hideProductList() {
+      document.getElementById('productListContainer').style.display = 'none';
+    }
+
+    function displayProducts(products) {
+      const productList = document.getElementById('productList');
+      
+      if (products.length === 0) {
+        productList.innerHTML = '<div class="no-results">Aucun produit trouvé</div>';
+        return;
+      }
+      
+      productList.innerHTML = products.slice(0, 100).map((item, index) => 
+        `<div class="product-item" onclick="selectProduct(${database.indexOf(item)})">
+          <div class="product-ref">${item[COL_REF] || 'N/A'}</div>
+          <div class="product-details">
+            ${item[COL_CODE] || 'N/A'} | ${item[COL_MARQUE] || 'N/A'} | 
+            Taille: ${item[COL_TAILLE] || 'N/A'} | Couleur: ${item[COL_COULEUR] || 'N/A'}
+          </div>
+        </div>`
+      ).join('');
+      
+      if (products.length > 100) {
+        productList.innerHTML += '<div class="no-results">... et ' + (products.length - 100) + ' autres résultats. Affinez votre recherche.</div>';
+      }
+    }
+
+    function filterProducts() {
+      const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+      
+      if (searchTerm === '') {
+        displayProducts(database);
+        return;
+      }
+      
+      const filteredProducts = database.filter(item => {
+        const ref = (item[COL_REF] || '').toLowerCase();
+        const code = (item[COL_CODE] || '').toLowerCase();
+        const marque = (item[COL_MARQUE] || '').toLowerCase();
+        const couleur = (item[COL_COULEUR] || '').toLowerCase();
+        const taille = (item[COL_TAILLE] || '').toLowerCase();
+        const ean = (item[COL_EAN] || '').toLowerCase();
+        
+        return ref.includes(searchTerm) || 
+               code.includes(searchTerm) || 
+               marque.includes(searchTerm) || 
+               couleur.includes(searchTerm) || 
+               taille.includes(searchTerm) ||
+               ean.includes(searchTerm);
+      });
+      
+      displayProducts(filteredProducts);
+    }
+
+    function selectProduct(index) {
+      const selectedItem = database[index];
+      hideProductList();
+      
+      // Définir le produit actuel
+      currentProductToAdd = selectedItem;
+      
+      // Afficher le produit sélectionné
+      const rd = document.getElementById("results");
+      rd.style.display = "block";
+      rd.innerHTML = `
+        <div class="item">
+          <strong>✅ Article sélectionné !</strong><br/><br/>
+          <strong>Réf :</strong> ${selectedItem[COL_REF] || 'N/A'}<br/>
+          <strong>Code Article :</strong> ${selectedItem[COL_CODE] || 'N/A'}<br/>
+          <strong>Marque :</strong> ${selectedItem[COL_MARQUE] || 'N/A'}<br/>
+          <strong>Couleur :</strong> ${selectedItem[COL_COULEUR] || 'N/A'}<br/>
+          <strong>Taille :</strong> ${selectedItem[COL_TAILLE] || 'N/A'}<br/>
+          <strong>EAN :</strong> ${selectedItem[COL_EAN] || 'N/A'}<br/><br/>
+          <button onclick="showAddInfoForm()">➕ Ajouter à la liste</button>
+        </div>`;
+      
+      // Remplir aussi le champ EAN pour cohérence
+      document.getElementById("barcodeInput").value = selectedItem[COL_EAN] || '';
+      
+      // Faire défiler vers les résultats
+      rd.scrollIntoView({ behavior: 'smooth' });
+      
+      // Vibration si supportée
+      if (navigator.vibrate) {
+        navigator.vibrate(100);
+      }
+    }
+
+    function exportPDF() {
+      if (selectedItems.length === 0) {
+        alert("⚠️ Aucune référence à exporter");
+        return;
+      }
+      
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      doc.setFont("helvetica", "normal");
+      const now = new Date();
+      const timestamp = now.toLocaleString("fr-FR");
+      const marginLeft = 20;
+      let y = 30;
+
+      // En-tête
+      doc.setFontSize(10);
+      doc.text(`Date : ${timestamp}`, 10, 10);
+      doc.text(`Nombre d'articles : ${selectedItems.length}`, 10, 15);
+
+      doc.setFontSize(16);
+      doc.text("Liste de colisage", marginLeft, 25);
+
+      // Contenu
+      doc.setFontSize(10);
+      selectedItems.forEach((item, i) => {
+        const text = `${i + 1}. ${item.product[COL_REF]} | ${item.product[COL_CODE]} | Taille: ${item.product[COL_TAILLE]} | Marque: ${item.product[COL_MARQUE]}`;
+        const lines = doc.splitTextToSize(text, 170);
+        
+        // Nouvelle page si nécessaire
+        if (y + (lines.length * 5) > 270) {
+          doc.addPage();
+          y = 20;
+        }
+        
+        doc.text(lines, marginLeft, y);
+        y += lines.length * 5 + 3;
+      });
+
+      doc.save(`colisage_${new Date().toISOString().slice(0,10)}.pdf`);
+    }
+
+    function exportExcel() {
+      if (selectedItems.length === 0) {
+        alert("⚠️ Aucune référence à exporter");
+        return;
+      }
+
+      // Créer les données pour Excel
+      const excelData = selectedItems.map(item => ({
+        'Code Article': item.product[COL_CODE] || '',
+        'Référence': item.product[COL_REF] || '',
+        'Couleur': item.product[COL_COULEUR] || '',
+        'Taille': item.product[COL_TAILLE] || '',
+        'Fournisseur': item.additionalInfo.fournisseur || '',
+        'Styliste': item.additionalInfo.styliste || '',
+        'Penderie Style': item.additionalInfo.penderieStyle || '',
+        'Shooting Photos': item.additionalInfo.shootingPhotos || '',
+        'Showroom': item.additionalInfo.showroom || '',
+        'A garder': item.additionalInfo.aGarder || '',
+        'Auber': item.additionalInfo.auber || ''
+      }));
+
+      // Créer le workbook et la worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(excelData);
+
+      // Ajuster la largeur des colonnes
+      const colWidths = [
+        { wch: 15 }, // Code Article
+        { wch: 15 }, // Référence
+        { wch: 12 }, // Couleur
+        { wch: 8 },  // Taille
+        { wch: 12 }, // Fournisseur
+        { wch: 12 }, // Styliste
+        { wch: 18 }, // Penderie Style
+        { wch: 15 }, // Shooting Photos
+        { wch: 20 }, // Showroom
+        { wch: 20 }, // A garder
+        { wch: 20 }  // Auber
+      ];
+      ws['!cols'] = colWidths;
+
+      // Ajouter la worksheet au workbook
+      XLSX.utils.book_append_sheet(wb, ws, "Colisage");
+
+      // Sauvegarder le fichier
+      XLSX.writeFile(wb, `colisage_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+
+    // Gérer la saisie manuelle avec Enter
+    document.addEventListener('DOMContentLoaded', function() {
+      const barcodeInput = document.getElementById('barcodeInput');
+      if (barcodeInput) {
+        barcodeInput.addEventListener('keypress', function(e) {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            findProduct();
+          }
+        });
+      }
+    });
+
+    // Empêcher le zoom sur double-tap (iOS)
+    let lastTouchEnd = 0;
+    document.addEventListener('touchend', function (event) {
+      const now = (new Date()).getTime();
+      if (now - lastTouchEnd <= 300) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
+    }, false);
+  </script>
+</body>
+</html>
