@@ -520,7 +520,13 @@
       
       // Changer de caméra (avant/arrière)
       async switchCamera() {
+        console.log('🔄 Méthode switchCamera appelée');
         try {
+          if (!this.isScanning) {
+            this.updateStatus('⚠️ Caméra non active');
+            return;
+          }
+          
           this.updateStatus('🔄 Changement de caméra...');
           
           // Arrêter le flux actuel
@@ -542,9 +548,10 @@
 
       // Activer/Désactiver le flash (si supporté)
       async toggleFlash() {
+        console.log('💡 Méthode toggleFlash appelée');
         try {
-          if (!this.videoStream) {
-            this.updateStatus('⚠️ Aucun flux vidéo actif');
+          if (!this.isScanning || !this.videoStream) {
+            this.updateStatus('⚠️ Caméra non active');
             return;
           }
           
@@ -568,7 +575,6 @@
               this.updateStatus(!currentTorch ? '💡 Flash activé' : '💡 Flash désactivé');
             } else {
               this.updateStatus('⚠️ Flash non supporté sur cet appareil');
-              console.log('Capacités flash:', capabilities);
             }
           } else {
             this.updateStatus('⚠️ Contrôle du flash non disponible');
@@ -581,9 +587,10 @@
 
       // Ajuster la qualité de la caméra
       async adjustQuality() {
+        console.log('⚙️ Méthode adjustQuality appelée');
         try {
-          if (!this.videoStream) {
-            this.updateStatus('⚠️ Aucun flux vidéo actif');
+          if (!this.isScanning || !this.videoStream) {
+            this.updateStatus('⚠️ Caméra non active');
             return;
           }
           
@@ -593,9 +600,6 @@
           if (videoTrack && videoTrack.getCapabilities) {
             const capabilities = videoTrack.getCapabilities();
             const settings = videoTrack.getSettings();
-            
-            console.log('Capacités actuelles:', capabilities);
-            console.log('Paramètres actuels:', settings);
             
             // Déterminer la prochaine qualité
             const qualities = [
@@ -645,76 +649,16 @@
         }
       }
 
-      // Méthode de test pour vérifier la caméra
-      async testCamera() {
-        try {
-          this.updateStatus('🧪 Test de la caméra...');
-          
-          // Vérifier les permissions
-          const permissions = await navigator.permissions.query({ name: 'camera' });
-          console.log('Permissions caméra:', permissions.state);
-          
-          // Lister les appareils
-          const devices = await navigator.mediaDevices.enumerateDevices();
-          const videoDevices = devices.filter(device => device.kind === 'videoinput');
-          console.log('Appareils vidéo disponibles:', videoDevices);
-          
-          this.updateStatus(`✅ Test OK - ${videoDevices.length} caméra(s) détectée(s)`);
-          
-        } catch (error) {
-          console.error('Erreur lors du test:', error);
-          this.updateStatus('❌ Erreur de test: ' + error.message);
-        }
+      // Méthode simplifiée pour vérifier l'état de la caméra
+      getCameraStatus() {
+        return {
+          isScanning: this.isScanning,
+          hasVideoStream: !!this.videoStream,
+          hasCodeReader: !!this.codeReader
+        };
       }
 
-      // Méthode de debug pour le décodage
-      enableDebugMode() {
-        if (this.codeReader) {
-          this.codeReader.debug = true;
-          console.log('Mode debug activé pour le lecteur de codes-barres');
-        }
-      }
 
-      // Test de décodage avec une image statique
-      async testDecoding() {
-        try {
-          this.updateStatus('🧪 Test de décodage...');
-          
-          // Créer un canvas de test avec un code-barres simple
-          const canvas = document.createElement('canvas');
-          const ctx = canvas.getContext('2d');
-          canvas.width = 200;
-          canvas.height = 100;
-          
-          // Dessiner un code-barres de test (simulation)
-          ctx.fillStyle = 'white';
-          ctx.fillRect(0, 0, 200, 100);
-          ctx.fillStyle = 'black';
-          
-          // Simuler des barres
-          for (let i = 0; i < 20; i++) {
-            if (i % 2 === 0) {
-              ctx.fillRect(i * 10, 0, 5, 100);
-            }
-          }
-          
-          // Tester le décodage
-          if (this.codeReader) {
-            try {
-              const result = await this.codeReader.decodeFromCanvas(canvas);
-              console.log('Test de décodage réussi:', result);
-              this.updateStatus('✅ Test de décodage réussi');
-            } catch (error) {
-              console.log('Test de décodage échoué (normal):', error);
-              this.updateStatus('⚠️ Test de décodage: ' + error.message);
-            }
-          }
-          
-        } catch (error) {
-          console.error('Erreur lors du test de décodage:', error);
-          this.updateStatus('❌ Erreur test décodage: ' + error.message);
-        }
-      }
     }
 
     // === MONITORING DE PERFORMANCE ===
@@ -828,14 +772,7 @@
       }
     };
 
-    // Fonction de diagnostic global
-    window.diagnoseCamera = function() {
-      if (cameraManager) {
-        cameraManager.testCamera();
-      } else {
-        alert('Caméra non initialisée. Cliquez d\'abord sur "Scanner en direct".');
-      }
-    };
+
 
     // === GESTION DES CHANGEMENTS D'ÉTAT ===
     document.addEventListener('visibilitychange', () => {
@@ -1635,7 +1572,6 @@
         <button id="scanButton" onclick="startCamera()">📷 Scanner en direct</button>
         <button id="stopButton" onclick="stopCamera()" style="display:none;">⏹️ Arrêter</button>
         <button onclick="showProductList()">📋 Choisir dans la liste</button>
-        <button onclick="diagnoseCamera()" style="background: #17a2b8;">🔍 Diagnostiquer</button>
       </div>
       
       <div id="scannerContainer">
@@ -1659,9 +1595,9 @@
           📊 FPS: -- | 🟢
         </div>
         
-        <!-- Contrôles avancés de la caméra -->
+        <!-- Contrôles essentiels de la caméra -->
         <div id="advancedCameraControls" class="camera-controls" style="display: none;">
-          <button onclick="cameraManager?.switchCamera()" id="switchButton" title="Changer de caméra">
+          <button onclick="cameraManager?.switchCamera()" id="switchButton" title="Changer de caméra (avant/arrière)">
             🔄 Caméra
           </button>
           <button onclick="cameraManager?.toggleFlash()" id="flashButton" title="Activer/Désactiver le flash">
@@ -1669,12 +1605,6 @@
           </button>
           <button onclick="cameraManager?.adjustQuality()" id="qualityButton" title="Ajuster la qualité">
             ⚙️ Qualité
-          </button>
-          <button onclick="cameraManager?.testCamera()" id="testButton" title="Tester la caméra">
-            🧪 Test
-          </button>
-          <button onclick="cameraManager?.testDecoding()" id="testDecodeButton" title="Tester le décodage">
-            📊 Test Décodage
           </button>
         </div>
         
@@ -2208,6 +2138,11 @@
         return;
       }
       
+      // Arrêter la caméra si elle est active
+      if (cameraManager && cameraManager.isScanning) {
+        cameraManager.stopCamera();
+      }
+      
       document.getElementById('productListContainer').style.display = 'block';
       document.getElementById('searchInput').value = '';
       displayProducts(database);
@@ -2223,6 +2158,14 @@
 
     function hideProductList() {
       document.getElementById('productListContainer').style.display = 'none';
+      
+      // Optionnel : proposer de relancer la caméra
+      if (cameraManager && !cameraManager.isScanning) {
+        const confirmReload = confirm('Voulez-vous relancer la caméra pour scanner ?');
+        if (confirmReload) {
+          startCamera();
+        }
+      }
     }
 
     function displayProducts(products) {
