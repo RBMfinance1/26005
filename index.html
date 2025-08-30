@@ -27,45 +27,82 @@
         this.lastError = null;
       }
 
-      // Détection automatique des capacités de l'appareil
+      // Détection automatique des capacités de l'appareil - OPTIMISÉ MOBILE
       async getOptimalCameraConstraints() {
         try {
           const devices = await navigator.mediaDevices.enumerateDevices();
           const videoDevices = devices.filter(device => device.kind === 'videoinput');
           
-          // Prioriser la caméra arrière
+          // Détection smartphone
+          const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+          const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+          const isAndroid = /Android/.test(navigator.userAgent);
+          
+          console.log('Détection appareil:', { isMobile, isIOS, isAndroid });
+          
+          // Prioriser la caméra arrière sur mobile
           const backCamera = videoDevices.find(device => 
             device.label.toLowerCase().includes('back') || 
             device.label.toLowerCase().includes('arrière') ||
-            device.label.toLowerCase().includes('rear')
+            device.label.toLowerCase().includes('rear') ||
+            device.label.toLowerCase().includes('arrière')
           );
           
-          // Adapter la configuration selon les performances
-          const isLowEndDevice = navigator.hardwareConcurrency <= 2 || 
-                                navigator.deviceMemory <= 2 ||
-                                /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+          // Configuration optimisée smartphone
+          let constraints;
           
-          const constraints = {
-            video: {
-              facingMode: backCamera ? 'environment' : 'user',
-              width: { 
-                min: 640, 
-                ideal: isLowEndDevice ? 640 : 1280, 
-                max: 1920 
-              },
-              height: { 
-                min: 480, 
-                ideal: isLowEndDevice ? 480 : 720, 
-                max: 1080 
-              },
-              frameRate: { 
-                ideal: isLowEndDevice ? 15 : 30, 
-                max: 60 
+          if (isMobile) {
+            // Configuration mobile optimisée
+            constraints = {
+              video: {
+                facingMode: backCamera ? 'environment' : 'user',
+                width: { 
+                  min: 640, 
+                  ideal: 1280, 
+                  max: 1920 
+                },
+                height: { 
+                  min: 480, 
+                  ideal: 720, 
+                  max: 1080 
+                },
+                frameRate: { 
+                  ideal: 30, 
+                  max: 60 
+                },
+                // Optimisations spécifiques mobile
+                aspectRatio: { ideal: 16/9 },
+                // Stabilisation si supportée
+                ...(isAndroid && { imageQuality: 'high' }),
+                // Focus automatique sur mobile
+                focusMode: { ideal: 'continuous' },
+                // Exposition automatique
+                exposureMode: { ideal: 'continuous' },
+                // Balance des blancs automatique
+                whiteBalanceMode: { ideal: 'continuous' }
               }
+            };
+            
+            // Optimisations iOS spécifiques
+            if (isIOS) {
+              constraints.video.width.ideal = 1920;
+              constraints.video.height.ideal = 1080;
+              constraints.video.frameRate.ideal = 60;
             }
-          };
+            
+          } else {
+            // Configuration desktop
+            constraints = {
+              video: {
+                facingMode: backCamera ? 'environment' : 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { ideal: 30 }
+              }
+            };
+          }
           
-          console.log('Configuration caméra optimisée:', constraints);
+          console.log('Configuration caméra optimisée mobile:', constraints);
           return constraints;
           
         } catch (error) {
@@ -74,7 +111,8 @@
             video: {
               facingMode: 'environment',
               width: { ideal: 1280 },
-              height: { ideal: 720 }
+              height: { ideal: 720 },
+              frameRate: { ideal: 30 }
             }
           };
         }
@@ -162,6 +200,9 @@
         this.updateStatus('✅ Caméra prête - Placez le code-barres dans le cadre');
         this.showCameraUI();
         this.startPerformanceMonitoring();
+        
+        // Optimisations spécifiques mobile
+        this.optimizeForMobileScanning();
         
         console.log('Caméra initialisée avec succès');
       }
@@ -291,9 +332,15 @@
       showCameraUI() {
         const video = document.getElementById('video');
         const scannerContainer = document.getElementById('scannerContainer');
+        const mobileInstructions = document.getElementById('mobileInstructions');
         
         if (video) video.style.display = 'block';
         if (scannerContainer) scannerContainer.style.display = 'block';
+        
+        // Afficher les instructions mobiles si c'est un smartphone
+        if (mobileInstructions && this.isMobileDevice()) {
+          mobileInstructions.style.display = 'block';
+        }
         
         // Afficher les contrôles avancés
         this.showAdvancedControls();
@@ -328,6 +375,110 @@
         if (!this.performanceMonitor) {
           this.performanceMonitor = new PerformanceMonitor();
           this.performanceMonitor.start();
+        }
+        
+        // Démarrer le monitoring mobile
+        this.startMobileOptimizations();
+      }
+
+      // Optimisations spécifiques mobile
+      startMobileOptimizations() {
+        // Gestion de l'orientation
+        this.handleOrientationChange();
+        
+        // Écouter les changements d'orientation
+        window.addEventListener('orientationchange', () => {
+          setTimeout(() => this.handleOrientationChange(), 100);
+        });
+        
+        // Gestion du zoom tactile
+        this.preventZoomOnDoubleTap();
+        
+        // Optimisation de la batterie
+        this.optimizeBatteryUsage();
+      }
+
+      // Gestion du changement d'orientation
+      handleOrientationChange() {
+        const video = document.getElementById('video');
+        const scannerContainer = document.getElementById('scannerContainer');
+        
+        if (!video || !scannerContainer) return;
+        
+        const orientation = window.orientation || 0;
+        const isLandscape = Math.abs(orientation) === 90;
+        
+        if (isLandscape) {
+          // Mode paysage - optimiser pour la largeur
+          video.style.maxWidth = '80vw';
+          video.style.maxHeight = '60vh';
+          scannerContainer.style.transform = 'rotate(0deg)';
+        } else {
+          // Mode portrait - optimiser pour la hauteur
+          video.style.maxWidth = '90vw';
+          video.style.maxHeight = '50vh';
+          scannerContainer.style.transform = 'rotate(0deg)';
+        }
+        
+        console.log('Orientation changée:', { orientation, isLandscape });
+      }
+
+      // Prévenir le zoom sur double-tap
+      preventZoomOnDoubleTap() {
+        let lastTouchEnd = 0;
+        document.addEventListener('touchend', (event) => {
+          const now = Date.now();
+          if (now - lastTouchEnd <= 300) {
+            event.preventDefault();
+          }
+          lastTouchEnd = now;
+        }, false);
+      }
+
+      // Optimisation de la batterie
+      optimizeBatteryUsage() {
+        // Réduire la fréquence de scan si la batterie est faible
+        if ('getBattery' in navigator) {
+          navigator.getBattery().then(battery => {
+            if (battery.level < 0.2) {
+              this.updateStatus('🔋 Batterie faible - Mode économie activé');
+              // Réduire la fréquence de scan
+              if (this.performanceMonitor) {
+                this.performanceMonitor.setLowPowerMode(true);
+              }
+            }
+          });
+        }
+      }
+
+      // Vérifier si c'est un appareil mobile
+      isMobileDevice() {
+        return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+      }
+
+      // Optimisations spécifiques pour la lecture de codes-barres sur mobile
+      optimizeForMobileScanning() {
+        if (!this.isMobileDevice()) return;
+        
+        // Ajuster la sensibilité de détection pour mobile
+        if (this.codeReader) {
+          // Paramètres optimisés pour mobile
+          this.codeReader.hints = {
+            ...this.codeReader.hints,
+            TRY_HARDER: true,
+            PURE_BARCODE: false,
+            CHARACTER_SET: 'UTF-8'
+          };
+        }
+        
+        // Ajuster la fréquence de scan selon l'appareil
+        const isHighEndMobile = navigator.hardwareConcurrency >= 4 && 
+                               navigator.deviceMemory >= 4;
+        
+        if (isHighEndMobile) {
+          this.updateStatus('📱 Mode haute performance mobile activé');
+        } else {
+          this.updateStatus('📱 Mode standard mobile activé');
         }
       }
 
@@ -574,6 +725,8 @@
         this.lastTime = performance.now();
         this.isRunning = false;
         this.animationId = null;
+        this.lowPowerMode = false;
+        this.mobileOptimized = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
       }
 
       start() {
@@ -607,20 +760,44 @@
       updatePerformanceDisplay() {
         const perfElement = document.getElementById('performanceIndicator');
         if (perfElement) {
-          perfElement.innerHTML = `📊 FPS: ${this.fps}`;
+          let displayText = `📊 FPS: ${this.fps}`;
           
           // Indicateur de qualité
           let quality = '🟢';
           if (this.fps < 15) quality = '🔴';
           else if (this.fps < 25) quality = '🟡';
           
-          perfElement.innerHTML += ` | ${quality}`;
+          displayText += ` | ${quality}`;
+          
+          // Indicateur mobile
+          if (this.mobileOptimized) {
+            displayText += ` | 📱 Mobile`;
+          }
+          
+          // Indicateur économie d'énergie
+          if (this.lowPowerMode) {
+            displayText += ` | 🔋 Éco`;
+          }
+          
+          perfElement.innerHTML = displayText;
         }
         
         // Détecter automatiquement les problèmes de performance
         if (this.fps < 15 && cameraManager) {
           cameraManager.detectPerformanceIssues();
         }
+      }
+
+      // Mode économie d'énergie
+      setLowPowerMode(enabled) {
+        this.lowPowerMode = enabled;
+        if (enabled) {
+          // Réduire la fréquence de monitoring
+          this.monitoringInterval = 2000; // 2 secondes au lieu de 1
+        } else {
+          this.monitoringInterval = 1000; // 1 seconde normale
+        }
+        console.log('Mode économie d\'énergie:', enabled);
       }
     }
 
@@ -921,6 +1098,114 @@
       to { 
         opacity: 1;
         transform: translateY(0);
+      }
+    }
+    
+    /* === STYLES SPÉCIFIQUES MOBILE === */
+    
+    .mobile-instructions {
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 15px;
+      border-radius: 10px;
+      margin: 15px 0;
+      text-align: left;
+      max-width: 400px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    
+    .instruction-item {
+      display: flex;
+      align-items: center;
+      margin: 8px 0;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    
+    .instruction-item span {
+      margin-right: 10px;
+      font-size: 18px;
+      min-width: 25px;
+    }
+    
+    /* Optimisations mobile pour la vidéo */
+    #video {
+      width: 100%;
+      max-width: 400px;
+      height: 300px;
+      border: 2px solid #667eea;
+      border-radius: 10px;
+      object-fit: cover;
+      /* Optimisations mobile */
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+      -webkit-backface-visibility: hidden;
+      backface-visibility: hidden;
+    }
+    
+    /* Cadre de scan optimisé mobile */
+    .scanner-frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 250px;
+      height: 150px;
+      border: 3px solid #00ff00;
+      border-radius: 15px;
+      pointer-events: none;
+      /* Animation mobile */
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(0, 255, 0, 0.7); }
+      70% { box-shadow: 0 0 0 10px rgba(0, 255, 0, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(0, 255, 0, 0); }
+    }
+    
+    /* Boutons optimisés mobile */
+    .camera-controls button {
+      background: rgba(102, 126, 234, 0.9);
+      border: 2px solid white;
+      color: white;
+      padding: 12px 18px;
+      border-radius: 25px;
+      font-size: 14px;
+      min-width: 90px;
+      min-height: 48px; /* Taille minimum pour mobile */
+      transition: all 0.3s ease;
+      touch-action: manipulation; /* Optimisation tactile */
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    /* Responsive mobile */
+    @media (max-width: 768px) {
+      .camera-controls {
+        flex-direction: column;
+        gap: 8px;
+      }
+      
+      .camera-controls button {
+        min-width: 120px;
+        min-height: 50px;
+        font-size: 16px;
+      }
+      
+      #video {
+        height: 250px;
+        max-width: 90vw;
+      }
+      
+      .scanner-frame {
+        width: 200px;
+        height: 120px;
+      }
+      
+      .mobile-instructions {
+        font-size: 13px;
+        padding: 12px;
       }
     }
     
@@ -1391,6 +1676,22 @@
           <button onclick="cameraManager?.testDecoding()" id="testDecodeButton" title="Tester le décodage">
             📊 Test Décodage
           </button>
+        </div>
+        
+        <!-- Instructions spécifiques mobile -->
+        <div id="mobileInstructions" class="mobile-instructions" style="display: none;">
+          <div class="instruction-item">
+            <span>📱</span> Tenez le téléphone à 10-20 cm du code-barres
+          </div>
+          <div class="instruction-item">
+            <span>🎯</span> Centrez le code dans le cadre vert
+          </div>
+          <div class="instruction-item">
+            <span>💡</span> Utilisez le flash si l'éclairage est faible
+          </div>
+          <div class="instruction-item">
+            <span>🔄</span> Changez de caméra si nécessaire
+          </div>
         </div>
         
         <div class="scan-instruction">Placez le code-barres dans le cadre</div>
