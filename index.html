@@ -11,76 +11,554 @@
   <script type="module">
     import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@0.0.10/+esm';
 
-    let codeReader = null;
-    let isScanning = false;
+    // === NOUVEAU SYSTÈME DE GESTION DE CAMÉRA AMÉLIORÉ ===
+    
+    class CameraManager {
+      constructor() {
+        this.codeReader = null;
+        this.videoStream = null;
+        this.isScanning = false;
+        this.isInitializing = false;
+        this.maxRetries = 3;
+        this.retryDelay = 1000;
+        this.currentRetry = 0;
+        this.performanceMonitor = null;
+        this.cleanupCallbacks = [];
+        this.lastError = null;
+      }
 
-    // Scanner via flux vidéo en temps réel
-    window.startCamera = async function() {
-      const video = document.getElementById('video');
-      const scanButton = document.getElementById('scanButton');
-      const stopButton = document.getElementById('stopButton');
-      
-      try {
-        // Arrêter toute session précédente
-        if (codeReader) {
-          codeReader.reset();
+      // Détection automatique des capacités de l'appareil
+      async getOptimalCameraConstraints() {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          
+          // Prioriser la caméra arrière
+          const backCamera = videoDevices.find(device => 
+            device.label.toLowerCase().includes('back') || 
+            device.label.toLowerCase().includes('arrière') ||
+            device.label.toLowerCase().includes('rear')
+          );
+          
+          // Adapter la configuration selon les performances
+          const isLowEndDevice = navigator.hardwareConcurrency <= 2 || 
+                                navigator.deviceMemory <= 2 ||
+                                /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+          
+          const constraints = {
+            video: {
+              facingMode: backCamera ? 'environment' : 'user',
+              width: { 
+                min: 640, 
+                ideal: isLowEndDevice ? 640 : 1280, 
+                max: 1920 
+              },
+              height: { 
+                min: 480, 
+                ideal: isLowEndDevice ? 480 : 720, 
+                max: 1080 
+              },
+              frameRate: { 
+                ideal: isLowEndDevice ? 15 : 30, 
+                max: 60 
+              }
+            }
+          };
+          
+          console.log('Configuration caméra optimisée:', constraints);
+          return constraints;
+          
+        } catch (error) {
+          console.warn('Impossible de détecter les capacités, utilisation de la config par défaut:', error);
+          return {
+            video: {
+              facingMode: 'environment',
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          };
+        }
+      }
+
+      // Initialisation avec retry automatique
+      async initializeCamera() {
+        if (this.isInitializing) {
+          console.log('Initialisation déjà en cours...');
+          return;
         }
         
-        codeReader = new BrowserMultiFormatReader();
-        const constraints = {
-          video: {
-            facingMode: 'environment', // Caméra arrière
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        };
+        this.isInitializing = true;
+        this.updateStatus('🔄 Initialisation de la caméra...');
         
-        await codeReader.decodeFromConstraints(constraints, video, (result, err) => {
-          if (result && isScanning) {
-            document.getElementById("barcodeInput").value = result.text;
-            stopCamera();
-            findProduct();
-            // Vibration si supportée
-            if (navigator.vibrate) {
-              navigator.vibrate(200);
-            }
+        try {
+          await this.tryInitializeCamera();
+          this.currentRetry = 0; // Reset du compteur de retry
+          this.lastError = null;
+          
+        } catch (error) {
+          this.lastError = error;
+          console.error('Erreur lors de l\'initialisation:', error);
+          
+          if (this.currentRetry < this.maxRetries) {
+            this.currentRetry++;
+            const delay = this.retryDelay * Math.pow(2, this.currentRetry - 1);
+            this.updateStatus(`⚠️ Tentative ${this.currentRetry}/${this.maxRetries} dans ${delay/1000}s...`);
+            
+            setTimeout(() => this.initializeCamera(), delay);
+          } else {
+            this.handleFinalError(error);
           }
+        } finally {
+          this.isInitializing = false;
+        }
+      }
+
+      // Tentative d'initialisation
+      async tryInitializeCamera() {
+        const video = document.getElementById('video');
+        const constraints = await this.getOptimalCameraConstraints();
+        
+        // Obtenir le flux vidéo
+        this.videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = this.videoStream;
+        
+        // Attendre que la vidéo soit prête
+        await new Promise((resolve, reject) => {
+          video.onloadedmetadata = resolve;
+          video.onerror = reject;
+          video.play().catch(reject);
         });
         
-        isScanning = true;
-        video.style.display = 'block';
-        scanButton.style.display = 'none';
-        stopButton.style.display = 'inline-block';
-        document.getElementById('scannerContainer').style.display = 'block';
+        // Initialiser le lecteur de codes-barres
+        this.codeReader = new BrowserMultiFormatReader();
         
-      } catch (err) {
-        console.error('Erreur caméra:', err);
-        alert('Impossible d\'accéder à la caméra. Vérifiez les permissions.');
-        resetCameraButtons();
+        // Configurer le callback de décodage avec throttling
+        await this.codeReader.decodeFromConstraints(
+          constraints, 
+          video, 
+          this.handleDecodeResult.bind(this)
+        );
+        
+        this.isScanning = true;
+        this.updateStatus('✅ Caméra prête - Placez le code-barres dans le cadre');
+        this.showCameraUI();
+        this.startPerformanceMonitoring();
+        
+        console.log('Caméra initialisée avec succès');
       }
+
+      // Gestion des résultats de décodage avec throttling
+      handleDecodeResult(result, error) {
+        if (!this.isScanning) return;
+        
+        if (result) {
+          console.log('Code-barres détecté:', result.text);
+          this.handleSuccessfulScan(result);
+        } else if (error && error.name !== 'NotFoundException') {
+          console.warn('Erreur de décodage:', error);
+          this.updateStatus('⚠️ Erreur de lecture, réessayez...');
+        }
+      }
+
+      // Gestion d'un scan réussi
+      handleSuccessfulScan(result) {
+        this.isScanning = false;
+        
+        // Vibration si supportée
+        if (navigator.vibrate) {
+          navigator.vibrate([100, 50, 100]);
+        }
+        
+        // Remplir le champ et rechercher
+        document.getElementById("barcodeInput").value = result.text;
+        this.updateStatus('✅ Code scanné avec succès !');
+        
+        // Arrêter la caméra et rechercher le produit
+        setTimeout(() => {
+          this.stopCamera();
+          if (typeof findProduct === 'function') {
+            findProduct();
+          }
+        }, 500);
+      }
+
+      // Gestion de l'erreur finale
+      handleFinalError(error) {
+        this.updateStatus('❌ Impossible d\'accéder à la caméra');
+        
+        let errorMessage = 'Erreur inconnue';
+        if (error.name === 'NotAllowedError') {
+          errorMessage = 'Permission refusée. Autorisez l\'accès à la caméra.';
+        } else if (error.name === 'NotFoundError') {
+          errorMessage = 'Aucune caméra trouvée sur cet appareil.';
+        } else if (error.name === 'NotReadableError') {
+          errorMessage = 'La caméra est utilisée par une autre application.';
+        } else if (error.name === 'OverconstrainedError') {
+          errorMessage = 'Configuration caméra non supportée.';
+        }
+        
+        this.showErrorModal(errorMessage);
+        this.resetCameraButtons();
+      }
+
+      // Arrêt de la caméra avec cleanup complet
+      stopCamera() {
+        this.isScanning = false;
+        this.updateStatus('⏹️ Arrêt de la caméra...');
+        
+        // Nettoyer les ressources
+        this.cleanup();
+        
+        // Masquer l'interface caméra
+        this.hideCameraUI();
+        this.resetCameraButtons();
+        
+        console.log('Caméra arrêtée et ressources nettoyées');
+      }
+
+      // Cleanup complet des ressources
+      cleanup() {
+        // Arrêter le flux vidéo
+        if (this.videoStream) {
+          this.videoStream.getTracks().forEach(track => {
+            track.stop();
+            track.enabled = false;
+          });
+          this.videoStream = null;
+        }
+
+        // Nettoyer le lecteur de codes-barres
+        if (this.codeReader) {
+          try {
+            this.codeReader.reset();
+          } catch (e) {
+            console.warn('Erreur lors du reset du code reader:', e);
+          }
+          this.codeReader = null;
+        }
+
+        // Arrêter le monitoring de performance
+        if (this.performanceMonitor) {
+          this.performanceMonitor.stop();
+          this.performanceMonitor = null;
+        }
+
+        // Exécuter tous les callbacks de cleanup
+        this.cleanupCallbacks.forEach(callback => {
+          try {
+            callback();
+          } catch (e) {
+            console.warn('Erreur dans le callback de cleanup:', e);
+          }
+        });
+        this.cleanupCallbacks = [];
+      }
+
+      // Ajouter un callback de cleanup
+      addCleanupCallback(callback) {
+        this.cleanupCallbacks.push(callback);
+      }
+
+      // Mise à jour du statut
+      updateStatus(message) {
+        const statusElement = document.getElementById('cameraStatus');
+        if (statusElement) {
+          statusElement.textContent = message;
+        }
+        console.log('Statut caméra:', message);
+      }
+
+      // Affichage de l'interface caméra
+      showCameraUI() {
+        const video = document.getElementById('video');
+        const scannerContainer = document.getElementById('scannerContainer');
+        
+        if (video) video.style.display = 'block';
+        if (scannerContainer) scannerContainer.style.display = 'block';
+        
+        // Afficher les contrôles avancés
+        this.showAdvancedControls();
+      }
+
+      // Masquage de l'interface caméra
+      hideCameraUI() {
+        const video = document.getElementById('video');
+        const scannerContainer = document.getElementById('scannerContainer');
+        
+        if (video) video.style.display = 'none';
+        if (scannerContainer) scannerContainer.style.display = 'none';
+        
+        // Masquer les contrôles avancés
+        this.hideAdvancedControls();
+      }
+
+      // Affichage des contrôles avancés
+      showAdvancedControls() {
+        const controls = document.getElementById('advancedCameraControls');
+        if (controls) controls.style.display = 'flex';
+      }
+
+      // Masquage des contrôles avancés
+      hideAdvancedControls() {
+        const controls = document.getElementById('advancedCameraControls');
+        if (controls) controls.style.display = 'none';
+      }
+
+      // Démarrage du monitoring de performance
+      startPerformanceMonitoring() {
+        if (!this.performanceMonitor) {
+          this.performanceMonitor = new PerformanceMonitor();
+          this.performanceMonitor.start();
+        }
+      }
+
+      // Affichage de la modal d'erreur
+      showErrorModal(message) {
+        const modal = document.createElement('div');
+        modal.className = 'error-modal';
+        modal.innerHTML = `
+          <div class="error-content">
+            <h3>❌ Erreur Caméra</h3>
+            <p>${message}</p>
+            <div class="error-actions">
+              <button onclick="this.parentElement.parentElement.parentElement.remove()">Fermer</button>
+              <button onclick="cameraManager.initializeCamera(); this.parentElement.parentElement.parentElement.remove()">Réessayer</button>
+            </div>
+          </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        // Auto-suppression après 10 secondes
+        setTimeout(() => {
+          if (modal.parentNode) {
+            modal.remove();
+          }
+        }, 10000);
+      }
+
+      // Réinitialisation des boutons
+      resetCameraButtons() {
+        const scanButton = document.getElementById('scanButton');
+        const stopButton = document.getElementById('stopButton');
+        
+        if (scanButton) scanButton.style.display = 'inline-block';
+        if (stopButton) stopButton.style.display = 'none';
+      }
+
+      // === CONTRÔLES AVANCÉS ===
+      
+      // Changer de caméra (avant/arrière)
+      async switchCamera() {
+        if (!this.videoStream) return;
+        
+        try {
+          this.updateStatus('🔄 Changement de caméra...');
+          
+          // Arrêter le flux actuel
+          this.cleanup();
+          
+          // Inverser le mode de la caméra
+          const currentConstraints = await this.getOptimalCameraConstraints();
+          currentConstraints.video.facingMode = 
+            currentConstraints.video.facingMode === 'environment' ? 'user' : 'environment';
+          
+          // Réinitialiser avec la nouvelle configuration
+          await this.tryInitializeCamera();
+          
+        } catch (error) {
+          console.error('Erreur lors du changement de caméra:', error);
+          this.updateStatus('❌ Erreur lors du changement de caméra');
+        }
+      }
+
+      // Activer/Désactiver le flash (si supporté)
+      async toggleFlash() {
+        if (!this.videoStream) return;
+        
+        try {
+          const videoTrack = this.videoStream.getVideoTracks()[0];
+          if (videoTrack && videoTrack.getCapabilities) {
+            const capabilities = videoTrack.getCapabilities();
+            
+            if (capabilities.torch) {
+              const currentTorch = videoTrack.getSettings().torch || false;
+              await videoTrack.applyConstraints({
+                advanced: [{ torch: !currentTorch }]
+              });
+              
+              const flashButton = document.getElementById('flashButton');
+              if (flashButton) {
+                flashButton.innerHTML = !currentTorch ? '💡 Flash ON' : '💡 Flash OFF';
+                flashButton.style.background = !currentTorch ? 
+                  'rgba(255, 193, 7, 0.9)' : 'rgba(102, 126, 234, 0.9)';
+              }
+              
+              this.updateStatus(!currentTorch ? '💡 Flash activé' : '💡 Flash désactivé');
+            } else {
+              this.updateStatus('⚠️ Flash non supporté sur cet appareil');
+            }
+          }
+        } catch (error) {
+          console.warn('Impossible de contrôler le flash:', error);
+          this.updateStatus('⚠️ Contrôle du flash non disponible');
+        }
+      }
+
+      // Ajuster la qualité de la caméra
+      async adjustQuality() {
+        if (!this.videoStream) return;
+        
+        try {
+          this.updateStatus('⚙️ Ajustement de la qualité...');
+          
+          const videoTrack = this.videoStream.getVideoTracks()[0];
+          if (videoTrack && videoTrack.getCapabilities) {
+            const capabilities = videoTrack.getCapabilities();
+            const settings = videoTrack.getSettings();
+            
+            // Déterminer la prochaine qualité
+            const qualities = [
+              { width: 640, height: 480, frameRate: 15 },
+              { width: 1280, height: 720, frameRate: 30 },
+              { width: 1920, height: 1080, frameRate: 30 }
+            ];
+            
+            const currentQuality = qualities.findIndex(q => 
+              q.width === settings.width && q.height === settings.height
+            );
+            
+            const nextQuality = qualities[(currentQuality + 1) % qualities.length];
+            
+            // Appliquer la nouvelle qualité
+            await videoTrack.applyConstraints({
+              width: { ideal: nextQuality.width },
+              height: { ideal: nextQuality.height },
+              frameRate: { ideal: nextQuality.frameRate }
+            });
+            
+            this.updateStatus(`⚙️ Qualité: ${nextQuality.width}x${nextQuality.height} @ ${nextQuality.frameRate}fps`);
+            
+            // Mettre à jour l'indicateur de qualité
+            const qualityButton = document.getElementById('qualityButton');
+            if (qualityButton) {
+              qualityButton.innerHTML = `⚙️ ${nextQuality.width}x${nextQuality.height}`;
+            }
+          }
+        } catch (error) {
+          console.error('Erreur lors de l\'ajustement de la qualité:', error);
+          this.updateStatus('❌ Erreur lors de l\'ajustement de la qualité');
+        }
+      }
+
+      // Détecter et gérer les problèmes de performance
+      detectPerformanceIssues() {
+        if (this.performanceMonitor && this.performanceMonitor.fps < 15) {
+          this.updateStatus('⚠️ Performance faible détectée, ajustement automatique...');
+          
+          // Réduire automatiquement la qualité
+          setTimeout(() => {
+            this.adjustQuality();
+          }, 1000);
+        }
+      }
+    }
+
+    // === MONITORING DE PERFORMANCE ===
+    class PerformanceMonitor {
+      constructor() {
+        this.fps = 0;
+        this.frameCount = 0;
+        this.lastTime = performance.now();
+        this.isRunning = false;
+        this.animationId = null;
+      }
+
+      start() {
+        this.isRunning = true;
+        this.measurePerformance();
+      }
+
+      stop() {
+        this.isRunning = false;
+        if (this.animationId) {
+          cancelAnimationFrame(this.animationId);
+        }
+      }
+
+      measurePerformance() {
+        if (!this.isRunning) return;
+        
+        const currentTime = performance.now();
+        this.frameCount++;
+        
+        if (currentTime - this.lastTime >= 1000) {
+          this.fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+          this.frameCount = 0;
+          this.lastTime = currentTime;
+          this.updatePerformanceDisplay();
+        }
+        
+        this.animationId = requestAnimationFrame(() => this.measurePerformance());
+      }
+
+      updatePerformanceDisplay() {
+        const perfElement = document.getElementById('performanceIndicator');
+        if (perfElement) {
+          perfElement.innerHTML = `📊 FPS: ${this.fps}`;
+          
+          // Indicateur de qualité
+          let quality = '🟢';
+          if (this.fps < 15) quality = '🔴';
+          else if (this.fps < 25) quality = '🟡';
+          
+          perfElement.innerHTML += ` | ${quality}`;
+        }
+        
+        // Détecter automatiquement les problèmes de performance
+        if (this.fps < 15 && cameraManager) {
+          cameraManager.detectPerformanceIssues();
+        }
+      }
+    }
+
+    // === INSTANCE GLOBALE ===
+    let cameraManager = null;
+    let isScanning = false;
+
+    // === FONCTIONS GLOBALES COMPATIBLES ===
+    window.startCamera = async function() {
+      if (!cameraManager) {
+        cameraManager = new CameraManager();
+      }
+      await cameraManager.initializeCamera();
     };
 
     window.stopCamera = function() {
-      isScanning = false;
-      
-      if (codeReader) {
-        try {
-          codeReader.reset();
-        } catch (e) {
-          console.log('Erreur lors de l\'arrêt de la caméra:', e);
-        }
-        codeReader = null;
+      if (cameraManager) {
+        cameraManager.stopCamera();
       }
-      
-      resetCameraButtons();
     };
 
-    function resetCameraButtons() {
-      document.getElementById('video').style.display = 'none';
-      document.getElementById('scanButton').style.display = 'inline-block';
-      document.getElementById('stopButton').style.display = 'none';
-      document.getElementById('scannerContainer').style.display = 'none';
-    }
+    // === GESTION DES CHANGEMENTS D'ÉTAT ===
+    document.addEventListener('visibilitychange', () => {
+      if (cameraManager && cameraManager.isScanning) {
+        if (document.hidden) {
+          console.log('Application masquée, pause de la caméra');
+          cameraManager.updateStatus('⏸️ Caméra en pause (app masquée)');
+        } else {
+          console.log('Application visible, reprise de la caméra');
+          cameraManager.updateStatus('▶️ Caméra active');
+        }
+      }
+    });
+
+    // === CLEANUP AU DÉCHARGEMENT ===
+    window.addEventListener('beforeunload', () => {
+      if (cameraManager) {
+        cameraManager.cleanup();
+      }
+    });
   </script>
   <style>
     * {
@@ -186,6 +664,144 @@
       display: none;
       text-align: center;
       margin: 15px 0;
+    }
+    
+    /* === NOUVEAUX STYLES POUR LA CAMÉRA AMÉLIORÉE === */
+    
+    .camera-status {
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 10px 15px;
+      border-radius: 8px;
+      margin: 10px 0;
+      font-size: 14px;
+      font-weight: 500;
+      display: inline-block;
+      min-width: 200px;
+    }
+    
+    .performance-indicator {
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin: 10px 0;
+      font-size: 12px;
+      font-family: monospace;
+      display: inline-block;
+    }
+    
+    .camera-controls {
+      display: flex;
+      gap: 10px;
+      margin: 15px 0;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    
+    .camera-controls button {
+      background: rgba(102, 126, 234, 0.9);
+      border: 2px solid white;
+      color: white;
+      padding: 8px 15px;
+      border-radius: 20px;
+      font-size: 12px;
+      min-width: 80px;
+      transition: all 0.3s ease;
+    }
+    
+    .camera-controls button:hover {
+      background: rgba(102, 126, 234, 1);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+    
+    .camera-controls button:active {
+      transform: translateY(0);
+    }
+    
+    /* Modal d'erreur */
+    .error-modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
+      animation: fadeIn 0.3s ease-out;
+    }
+    
+    .error-content {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      max-width: 400px;
+      width: 90%;
+      text-align: center;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      animation: slideUp 0.3s ease-out;
+    }
+    
+    .error-content h3 {
+      color: #dc3545;
+      margin: 0 0 15px 0;
+      font-size: 1.3em;
+    }
+    
+    .error-content p {
+      color: #666;
+      margin-bottom: 25px;
+      line-height: 1.5;
+    }
+    
+    .error-actions {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+    }
+    
+    .error-actions button {
+      padding: 10px 20px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+    
+    .error-actions button:first-child {
+      background: #6c757d;
+      color: white;
+    }
+    
+    .error-actions button:last-child {
+      background: #667eea;
+      color: white;
+    }
+    
+    .error-actions button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    @keyframes slideUp {
+      from { 
+        opacity: 0;
+        transform: translateY(30px);
+      }
+      to { 
+        opacity: 1;
+        transform: translateY(0);
+      }
     }
     
     #video {
@@ -617,6 +1233,11 @@
       </div>
       
       <div id="scannerContainer">
+        <!-- Indicateurs de performance et statut -->
+        <div id="cameraStatus" class="camera-status">
+          📱 Prêt à scanner
+        </div>
+        
         <div class="scanner-overlay">
           <video id="video" playsinline></video>
           <div class="scanner-frame">
@@ -626,6 +1247,25 @@
             <div class="scanner-corners corner-br"></div>
           </div>
         </div>
+        
+        <!-- Indicateur de performance -->
+        <div id="performanceIndicator" class="performance-indicator">
+          📊 FPS: -- | 🟢
+        </div>
+        
+        <!-- Contrôles avancés de la caméra -->
+        <div id="advancedCameraControls" class="camera-controls" style="display: none;">
+          <button onclick="cameraManager?.switchCamera()" id="switchButton" title="Changer de caméra">
+            🔄 Caméra
+          </button>
+          <button onclick="cameraManager?.toggleFlash()" id="flashButton" title="Activer/Désactiver le flash">
+            💡 Flash
+          </button>
+          <button onclick="cameraManager?.adjustQuality()" id="qualityButton" title="Ajuster la qualité">
+            ⚙️ Qualité
+          </button>
+        </div>
+        
         <div class="scan-instruction">Placez le code-barres dans le cadre</div>
       </div>
       
