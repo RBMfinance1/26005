@@ -132,12 +132,31 @@
         // Initialiser le lecteur de codes-barres
         this.codeReader = new BrowserMultiFormatReader();
         
-        // Configurer le callback de décodage avec throttling
-        await this.codeReader.decodeFromConstraints(
-          constraints, 
-          video, 
-          this.handleDecodeResult.bind(this)
-        );
+        // Configurer le callback de décodage avec une approche plus simple
+        try {
+          await this.codeReader.decodeFromConstraints(
+            constraints, 
+            video, 
+            this.handleDecodeResult.bind(this)
+          );
+        } catch (error) {
+          console.warn('Erreur avec decodeFromConstraints, tentative avec decodeFromVideoDevice:', error);
+          
+          // Fallback : utiliser decodeFromVideoDevice
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          
+          if (videoDevices.length > 0) {
+            const deviceId = videoDevices[0].deviceId;
+            await this.codeReader.decodeFromVideoDevice(
+              deviceId, 
+              video, 
+              this.handleDecodeResult.bind(this)
+            );
+          } else {
+            throw new Error('Aucun appareil vidéo trouvé');
+          }
+        }
         
         this.isScanning = true;
         this.updateStatus('✅ Caméra prête - Placez le code-barres dans le cadre');
@@ -147,7 +166,7 @@
         console.log('Caméra initialisée avec succès');
       }
 
-      // Gestion des résultats de décodage avec throttling
+      // Gestion des résultats de décodage
       handleDecodeResult(result, error) {
         if (!this.isScanning) return;
         
@@ -350,8 +369,6 @@
       
       // Changer de caméra (avant/arrière)
       async switchCamera() {
-        if (!this.videoStream) return;
-        
         try {
           this.updateStatus('🔄 Changement de caméra...');
           
@@ -374,9 +391,12 @@
 
       // Activer/Désactiver le flash (si supporté)
       async toggleFlash() {
-        if (!this.videoStream) return;
-        
         try {
+          if (!this.videoStream) {
+            this.updateStatus('⚠️ Aucun flux vidéo actif');
+            return;
+          }
+          
           const videoTrack = this.videoStream.getVideoTracks()[0];
           if (videoTrack && videoTrack.getCapabilities) {
             const capabilities = videoTrack.getCapabilities();
@@ -397,25 +417,34 @@
               this.updateStatus(!currentTorch ? '💡 Flash activé' : '💡 Flash désactivé');
             } else {
               this.updateStatus('⚠️ Flash non supporté sur cet appareil');
+              console.log('Capacités flash:', capabilities);
             }
+          } else {
+            this.updateStatus('⚠️ Contrôle du flash non disponible');
           }
         } catch (error) {
           console.warn('Impossible de contrôler le flash:', error);
-          this.updateStatus('⚠️ Contrôle du flash non disponible');
+          this.updateStatus('⚠️ Erreur flash: ' + error.message);
         }
       }
 
       // Ajuster la qualité de la caméra
       async adjustQuality() {
-        if (!this.videoStream) return;
-        
         try {
+          if (!this.videoStream) {
+            this.updateStatus('⚠️ Aucun flux vidéo actif');
+            return;
+          }
+          
           this.updateStatus('⚙️ Ajustement de la qualité...');
           
           const videoTrack = this.videoStream.getVideoTracks()[0];
           if (videoTrack && videoTrack.getCapabilities) {
             const capabilities = videoTrack.getCapabilities();
             const settings = videoTrack.getSettings();
+            
+            console.log('Capacités actuelles:', capabilities);
+            console.log('Paramètres actuels:', settings);
             
             // Déterminer la prochaine qualité
             const qualities = [
@@ -444,10 +473,12 @@
             if (qualityButton) {
               qualityButton.innerHTML = `⚙️ ${nextQuality.width}x${nextQuality.height}`;
             }
+          } else {
+            this.updateStatus('⚠️ Contrôle de la qualité non disponible');
           }
         } catch (error) {
           console.error('Erreur lors de l\'ajustement de la qualité:', error);
-          this.updateStatus('❌ Erreur lors de l\'ajustement de la qualité');
+          this.updateStatus('❌ Erreur qualité: ' + error.message);
         }
       }
 
@@ -460,6 +491,77 @@
           setTimeout(() => {
             this.adjustQuality();
           }, 1000);
+        }
+      }
+
+      // Méthode de test pour vérifier la caméra
+      async testCamera() {
+        try {
+          this.updateStatus('🧪 Test de la caméra...');
+          
+          // Vérifier les permissions
+          const permissions = await navigator.permissions.query({ name: 'camera' });
+          console.log('Permissions caméra:', permissions.state);
+          
+          // Lister les appareils
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter(device => device.kind === 'videoinput');
+          console.log('Appareils vidéo disponibles:', videoDevices);
+          
+          this.updateStatus(`✅ Test OK - ${videoDevices.length} caméra(s) détectée(s)`);
+          
+        } catch (error) {
+          console.error('Erreur lors du test:', error);
+          this.updateStatus('❌ Erreur de test: ' + error.message);
+        }
+      }
+
+      // Méthode de debug pour le décodage
+      enableDebugMode() {
+        if (this.codeReader) {
+          this.codeReader.debug = true;
+          console.log('Mode debug activé pour le lecteur de codes-barres');
+        }
+      }
+
+      // Test de décodage avec une image statique
+      async testDecoding() {
+        try {
+          this.updateStatus('🧪 Test de décodage...');
+          
+          // Créer un canvas de test avec un code-barres simple
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = 200;
+          canvas.height = 100;
+          
+          // Dessiner un code-barres de test (simulation)
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, 200, 100);
+          ctx.fillStyle = 'black';
+          
+          // Simuler des barres
+          for (let i = 0; i < 20; i++) {
+            if (i % 2 === 0) {
+              ctx.fillRect(i * 10, 0, 5, 100);
+            }
+          }
+          
+          // Tester le décodage
+          if (this.codeReader) {
+            try {
+              const result = await this.codeReader.decodeFromCanvas(canvas);
+              console.log('Test de décodage réussi:', result);
+              this.updateStatus('✅ Test de décodage réussi');
+            } catch (error) {
+              console.log('Test de décodage échoué (normal):', error);
+              this.updateStatus('⚠️ Test de décodage: ' + error.message);
+            }
+          }
+          
+        } catch (error) {
+          console.error('Erreur lors du test de décodage:', error);
+          this.updateStatus('❌ Erreur test décodage: ' + error.message);
         }
       }
     }
@@ -528,15 +630,33 @@
 
     // === FONCTIONS GLOBALES COMPATIBLES ===
     window.startCamera = async function() {
-      if (!cameraManager) {
-        cameraManager = new CameraManager();
+      try {
+        if (!cameraManager) {
+          cameraManager = new CameraManager();
+        }
+        await cameraManager.initializeCamera();
+      } catch (error) {
+        console.error('Erreur lors du démarrage de la caméra:', error);
+        alert('Erreur lors du démarrage de la caméra: ' + error.message);
       }
-      await cameraManager.initializeCamera();
     };
 
     window.stopCamera = function() {
+      try {
+        if (cameraManager) {
+          cameraManager.stopCamera();
+        }
+      } catch (error) {
+        console.error('Erreur lors de l\'arrêt de la caméra:', error);
+      }
+    };
+
+    // Fonction de diagnostic global
+    window.diagnoseCamera = function() {
       if (cameraManager) {
-        cameraManager.stopCamera();
+        cameraManager.testCamera();
+      } else {
+        alert('Caméra non initialisée. Cliquez d\'abord sur "Scanner en direct".');
       }
     };
 
@@ -1230,6 +1350,7 @@
         <button id="scanButton" onclick="startCamera()">📷 Scanner en direct</button>
         <button id="stopButton" onclick="stopCamera()" style="display:none;">⏹️ Arrêter</button>
         <button onclick="showProductList()">📋 Choisir dans la liste</button>
+        <button onclick="diagnoseCamera()" style="background: #17a2b8;">🔍 Diagnostiquer</button>
       </div>
       
       <div id="scannerContainer">
@@ -1263,6 +1384,12 @@
           </button>
           <button onclick="cameraManager?.adjustQuality()" id="qualityButton" title="Ajuster la qualité">
             ⚙️ Qualité
+          </button>
+          <button onclick="cameraManager?.testCamera()" id="testButton" title="Tester la caméra">
+            🧪 Test
+          </button>
+          <button onclick="cameraManager?.testDecoding()" id="testDecodeButton" title="Tester le décodage">
+            📊 Test Décodage
           </button>
         </div>
         
